@@ -6,31 +6,33 @@ import CardanoMultiplatformLib (Bech32, CborHex, addressObject, allocate, asksLi
 import CardanoMultiplatformLib as CardanoMultiplatformLib
 import CardanoMultiplatformLib.Transaction (TransactionUnspentOutputObject, ValueObject, transactionOutputObject, transactionUnspentOutput, transactionUnspentOutputObject)
 import CardanoMultiplatformLib.Types (Cbor, cborHexToCbor)
+import Contrib.Cardano as C
 import Data.Array as Array
 import Data.BigInt.Argonaut as BigInt.Argonaut
-import Data.Either (Either(..), fromRight)
+import Data.Either (Either(..), fromRight, hush)
 import Data.Foldable (fold)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Data.Traversable (for)
 import Data.Undefined.NoProblem as NoProblem
+import Debug (traceM)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Wallet (fromSomeAddress)
 import Wallet as Wallet
 
-
 newtype WalletContext = WalletContext
-  { balance :: Map.Map String (Map.Map String BigInt.Argonaut.BigInt)
-  , changeAddress :: Maybe Bech32
+  { balance :: C.Value
+  -- Map.Map String (Map.Map String BigInt.Argonaut.BigInt)
+  , changeAddress :: Bech32
   , usedAddresses :: Array Bech32
   }
 
 derive instance Newtype WalletContext _
 derive newtype instance Show WalletContext
 derive newtype instance Eq WalletContext
-derive newtype instance Ord WalletContext
+-- derive newtype instance Ord WalletContext
 
 walletBalance :: CardanoMultiplatformLib.Lib -> Wallet.Api -> Aff (Map.Map String (Map.Map String BigInt.Argonaut.BigInt))
 walletBalance cardanoMultiplatformLib wallet = do
@@ -71,14 +73,22 @@ walletAddresses cardanoMultiplatformLib wallet = do
     fromSomeAddress cardanoMultiplatformLib someAddress
   pure $ Array.nub $ utxoAddresses' <> addresses'
 
-walletContext :: CardanoMultiplatformLib.Lib -> Wallet.Api -> Aff WalletContext
+walletContext :: CardanoMultiplatformLib.Lib -> Wallet.Api -> Aff (Maybe WalletContext)
 walletContext cardanoMultiplatformLib wallet = do
   balance <- walletBalance cardanoMultiplatformLib wallet
   usedAddresses <- walletAddresses cardanoMultiplatformLib wallet
-  chAddr <- changeAddress cardanoMultiplatformLib wallet
-
-  pure $ WalletContext
-    { balance
-    , changeAddress: chAddr
-    , usedAddresses
-    }
+  possibleAddress <- changeAddress cardanoMultiplatformLib wallet
+  pure $ do
+    chAddr <- possibleAddress
+    balance' <- do
+      traceM balance
+      let
+        eb = C.valueFromNestedMaps balance
+      traceM "Balance:"
+      traceM eb
+      hush $ eb
+    pure $ WalletContext
+      { balance: balance'
+      , changeAddress: chAddr
+      , usedAddresses
+      }

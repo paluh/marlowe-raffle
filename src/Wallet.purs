@@ -4,7 +4,6 @@ module Wallet
   , ApiForeignErrors
   , Bytes(..)
   , Cbor(..)
-  , Coin
   , DataSignError
   , HashObject32(..)
   , SomeAddress(..)
@@ -45,7 +44,7 @@ import Prelude
 
 import CardanoMultiplatformLib (AddressObject, Bech32, CborHex, bech32FromCborHex, bech32FromString, runGarbageCollector)
 import CardanoMultiplatformLib as CardanoMultiplatformLib
-import CardanoMultiplatformLib.Transaction (TransactionHashObject, TransactionObject, TransactionUnspentOutputObject, TransactionWitnessSetObject, ValueObject)
+import CardanoMultiplatformLib.Transaction (BigNumObject, TransactionHashObject, TransactionObject, TransactionUnspentOutputObject, TransactionWitnessSetObject, ValueObject)
 import CardanoMultiplatformLib.Types (unsafeCborHex)
 import Control.Alt ((<|>))
 import Control.Monad.Except (runExcept, runExceptT)
@@ -62,6 +61,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Undefined.NoProblem (undefined)
 import Data.Variant (Variant)
 import Data.Variant as Variant
+import Debug (traceM)
 import Effect (Effect)
 import Effect.Aff (Aff, makeAff)
 import Effect.Class (liftEffect)
@@ -84,8 +84,6 @@ import Unsafe.Coerce (unsafeCoerce)
 import Web.HTML (Window)
 
 data TransactionUnspentOutput
-
-data Coin
 
 data Transaction
 
@@ -119,7 +117,10 @@ type TxSignError r =
   )
 
 type ApiForeignErrors r =
-  ( foreignErrors :: NonEmptyList ForeignError
+  ( foreignErrors ::
+      { value :: Foreign
+      , parsingErrors :: NonEmptyList ForeignError
+      }
   | r
   )
 
@@ -182,8 +183,8 @@ toTxSignError = case _ of
 unknownError :: forall r. Foreign -> Variant (| UnknownError + r)
 unknownError = Variant.inj (Proxy :: Proxy "unknownError")
 
-foreignErrors :: forall r. NonEmptyList ForeignError -> Variant (| ApiForeignErrors + r)
-foreignErrors = Variant.inj (Proxy :: Proxy "foreignErrors")
+foreignErrors :: forall r. Foreign -> NonEmptyList ForeignError -> Variant (| ApiForeignErrors + r)
+foreignErrors value parsingErrors = Variant.inj (Proxy :: Proxy "foreignErrors") { value, parsingErrors }
 
 lookupForeign :: forall a. String -> Object a -> Either (NonEmptyList ForeignError) a
 lookupForeign str obj = note (NonEmptyList (singleton $ ForeignError $ "Missing " <> str)) $ lookup str obj
@@ -209,7 +210,7 @@ newtype Bytes = Bytes String
 type Api = JSObject
   ( getNetworkId :: EffectMth0 (Promise Int)
   , getUtxos :: EffectMth0 (Promise (Nullable (Array (CborHex TransactionUnspentOutputObject))))
-  , getCollateral :: EffectMth1 (Cbor Coin) (Promise (Nullable (Array (Cbor TransactionUnspentOutput))))
+  , getCollateral :: EffectMth1 (CborHex BigNumObject) (Promise (Nullable (Array (CborHex TransactionUnspentOutputObject))))
   , getBalance :: EffectMth0 (Promise (CborHex ValueObject))
   , getUsedAddresses :: EffectMth0 (Promise (Array SomeAddress))
   , getUnusedAddresses :: EffectMth0 (Promise (Array (CborHex AddressObject)))
@@ -223,7 +224,7 @@ type Api = JSObject
 _Api
   :: { getBalance :: Api -> Effect (Promise (CborHex ValueObject))
      , getChangeAddress :: Api -> Effect (Promise SomeAddress)
-     , getCollateral :: Api -> Cbor Coin -> Effect (Promise (Nullable (Array (Cbor TransactionUnspentOutput))))
+     , getCollateral :: Api -> CborHex BigNumObject -> Effect (Promise (Nullable (Array (CborHex TransactionUnspentOutputObject))))
      , getNetworkId :: Api -> Effect (Promise Int)
      , getRewardAddresses :: Api -> Effect (Promise (Array (CborHex AddressObject)))
      , getUnusedAddresses :: Api -> Effect (Promise (Array (CborHex AddressObject)))
@@ -353,7 +354,7 @@ getChangeAddress :: forall r. Api -> Aff (Either (Variant (| ApiError + ApiForei
 getChangeAddress = toAffEitherE rejectionAPIError <<< _Api.getChangeAddress
 
 -- | Manually tested and works with Nami.
-getCollateral :: forall r. Api -> Cbor Coin -> Aff (Either (Variant (| ApiError + ApiForeignErrors + UnknownError r)) (Array (Cbor TransactionUnspentOutput)))
+getCollateral :: forall r. Api -> CborHex BigNumObject -> Aff (Either (Variant (| ApiError + ApiForeignErrors + UnknownError r)) (Array (CborHex TransactionUnspentOutputObject)))
 getCollateral api = map (map (fold <<< Nullable.toMaybe)) <<< toAffEitherE rejectionAPIError <<< _Api.getCollateral api
 
 -- | Manually tested and works with Nami.
@@ -403,7 +404,7 @@ rejectionAPIError rejection =
     x :: Foreign
     x = rejectionToForeign rejection
   in
-    either foreignErrors (fromMaybe' (\_ -> unknownError x) <<< toApiError) $ readWalletError x
+    either (foreignErrors x) (fromMaybe' (\_ -> unknownError x) <<< toApiError) $ readWalletError x
 
 rejectionDataSignError :: forall r. Promise.Rejection -> Variant (| ApiError + DataSignError + ApiForeignErrors + UnknownError r)
 rejectionDataSignError rejection =
@@ -411,7 +412,7 @@ rejectionDataSignError rejection =
     x :: Foreign
     x = rejectionToForeign rejection
   in
-    readWalletError x # either foreignErrors \e ->
+    readWalletError x # either (foreignErrors x) \e ->
       fromMaybe' (\_ -> unknownError x) $ toApiError e <|> toDataSignError e
 
 rejectionTxSignError :: forall r. Promise.Rejection -> Variant (| ApiError + TxSignError + ApiForeignErrors + UnknownError r)
@@ -420,7 +421,7 @@ rejectionTxSignError rejection =
     x :: Foreign
     x = rejectionToForeign rejection
   in
-    readWalletError x # either foreignErrors \e ->
+    readWalletError x # either (foreignErrors x) \e ->
       fromMaybe' (\_ -> unknownError x) $ toApiError e <|> toTxSignError e
 
 rejectionTxSendError :: forall r. Promise.Rejection -> Variant (| ApiError + TxSendError + ApiForeignErrors + UnknownError r)
@@ -429,7 +430,7 @@ rejectionTxSendError rejection =
     x :: Foreign
     x = rejectionToForeign rejection
   in
-    readWalletError x # either foreignErrors \e ->
+    readWalletError x # either (foreignErrors x) \e ->
       fromMaybe' (\_ -> unknownError x) $ toApiError e <|> toTxSendError e
 
 rejectionPaginateError :: forall r. Promise.Rejection -> Maybe Number /\ (Variant (| ApiError + ApiForeignErrors + UnknownError r))
@@ -441,7 +442,7 @@ rejectionPaginateError rejection =
     maxSize :: Maybe Number
     maxSize = hush $ runExcept $ Foreign.readNumber x
   in
-    maxSize /\ (either foreignErrors (fromMaybe' (\_ -> unknownError x) <<< toApiError) $ readWalletError x)
+    maxSize /\ (either (foreignErrors x) (fromMaybe' (\_ -> unknownError x) <<< toApiError) $ readWalletError x)
 
 toAffEither :: forall a err. (Promise.Rejection -> err) -> Promise.Promise a -> Aff (Either err a)
 toAffEither customCoerce p = makeAff \cb ->

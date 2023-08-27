@@ -4,6 +4,7 @@ import Prelude
 
 import CardanoMultiplatformLib.Address (AddressObject)
 import CardanoMultiplatformLib.Types (Bech32, Cbor, CborHex, JsonString)
+import Contrib.CardanoMultiplatformLib.ScriptHash (ScriptHashObject, ScriptHashesObject)
 import Data.Argonaut (Json)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Newtype (class Newtype)
@@ -186,7 +187,7 @@ transactionObject = mkNewtypedFFI (Proxy :: Proxy TransactionObject)
 
 newtype TransactionBody = TransactionBody
   ( JSObject
-      ( from_bytes :: EffectMth1 Uint8Array TransactionBodyObject
+      ( from_bytes :: EffectMth1 (Cbor TransactionBodyObject) TransactionBodyObject
       , from_json :: EffectMth1 JsonString TransactionBodyObject
       )
   )
@@ -194,7 +195,7 @@ newtype TransactionBody = TransactionBody
 derive instance Newtype TransactionBody _
 
 transactionBody
-  :: { from_bytes :: TransactionBody -> Uint8Array -> Effect TransactionBodyObject
+  :: { from_bytes :: TransactionBody -> Cbor TransactionBodyObject -> Effect TransactionBodyObject
      , from_json :: TransactionBody -> JsonString -> Effect TransactionBodyObject
      }
 transactionBody = mkNewtypedFFI (Proxy :: Proxy TransactionBody)
@@ -330,7 +331,8 @@ newtype TransactionWitnessSetObject = TransactionWitnessSetObject
     -- , set_plutus_v1_scripts :: PlutusV1Scripts -> Effect Unit
     -- , plutus_v1_scripts :: Effect (Maybe PlutusV1Scripts)
     -- , set_plutus_data :: PlutusList -> Effect Unit
-    -- , plutus_data :: Effect (Maybe PlutusList)
+    , plutus_data :: EffectMth0 (Opt PlutusListObject)
+    , redeemers :: EffectMth0 (Opt RedeemersObject)
     )
   )
 
@@ -341,6 +343,8 @@ transactionWitnessSetObject
      , to_bytes :: TransactionWitnessSetObject -> Effect Uint8Array
      , to_json :: TransactionWitnessSetObject -> Effect JsonString
      , to_js_value :: TransactionWitnessSetObject -> Effect Json
+     , plutus_data :: TransactionWitnessSetObject -> Effect (Opt PlutusListObject)
+     , redeemers :: TransactionWitnessSetObject -> Effect (Opt RedeemersObject)
      }
 transactionWitnessSetObject = mkNewtypedFFI (Proxy :: Proxy TransactionWitnessSetObject)
 
@@ -451,8 +455,8 @@ newtype ValueObject = ValueObject
       , to_json :: EffectMth0 JsonString
       , to_js_value :: EffectMth0 Json
       , is_zero :: EffectMth0 Boolean
-      , coin :: EffectMth0 BigNum
-      , set_coin :: EffectMth1 BigNum Unit
+      , coin :: EffectMth0 BigNumObject
+      , set_coin :: EffectMth1 BigNumObject Unit
       , multiasset :: EffectMth0 (Opt MultiAssetObject)
       , set_multiasset :: EffectMth1 MultiAssetObject Unit
       , checked_add :: EffectMth1 ValueObject ValueObject
@@ -470,8 +474,8 @@ valueObject
      , to_json :: ValueObject -> Effect JsonString
      , to_js_value :: ValueObject -> Effect Json
      , is_zero :: ValueObject -> Effect Boolean
-     , coin :: ValueObject -> Effect BigNum
-     , set_coin :: ValueObject -> BigNum -> Effect Unit
+     , coin :: ValueObject -> Effect BigNumObject
+     , set_coin :: ValueObject -> BigNumObject -> Effect Unit
      , multiasset :: ValueObject -> Effect (Opt MultiAssetObject)
      , set_multiasset :: ValueObject -> MultiAssetObject -> Effect Unit
      , checked_add :: ValueObject -> ValueObject -> Effect ValueObject
@@ -607,160 +611,6 @@ multiAssetObject
      , sub :: MultiAssetObject -> MultiAssetObject -> Effect MultiAssetObject
      }
 multiAssetObject = mkNewtypedFFI (Proxy :: Proxy MultiAssetObject)
-
--- export class ScriptHash {
---   free(): void;
--- /**
--- * @param {Uint8Array} bytes
--- * @returns {ScriptHash}
--- */
---   static from_bytes(bytes: Uint8Array): ScriptHash;
--- /**
--- * @returns {Uint8Array}
--- */
---   to_bytes(): Uint8Array;
--- /**
--- * @param {string} prefix
--- * @returns {string}
--- */
---   to_bech32(prefix: string): string;
--- /**
--- * @param {string} bech_str
--- * @returns {ScriptHash}
--- */
---   static from_bech32(bech_str: string): ScriptHash;
--- /**
--- * @returns {string}
--- */
---   to_hex(): string;
--- /**
--- * @param {string} hex
--- * @returns {ScriptHash}
--- */
---   static from_hex(hex: string): ScriptHash;
--- }
-
-newtype ScriptHash = ScriptHash
-  ( JSObject
-    ( from_bytes :: EffectMth1 (Cbor ScriptHashObject) ScriptHashObject
-    , from_bech32 :: EffectMth1 Bech32 ScriptHashObject
-    , from_hex :: EffectMth1 (CborHex ScriptHashObject) ScriptHashObject
-    )
-  )
-
-derive instance Newtype ScriptHash _
-
-scriptHash
-  :: { from_bytes :: ScriptHash -> Cbor ScriptHashObject -> Effect ScriptHashObject
-     , from_bech32 :: ScriptHash -> Bech32 -> Effect ScriptHashObject
-     , from_hex :: ScriptHash -> CborHex ScriptHashObject -> Effect ScriptHashObject
-     }
-scriptHash = mkNewtypedFFI (Proxy :: Proxy ScriptHash)
-
-newtype ScriptHashObject = ScriptHashObject
-  ( JSObject
-    ( free :: EffectMth0 Unit
-    , to_bytes :: EffectMth0 (Cbor ScriptHashObject)
-    , to_bech32 :: EffectMth1 Bech32 String
-    , to_hex :: EffectMth0 (CborHex ScriptHashObject)
-    )
-  )
-
-derive instance Newtype ScriptHashObject _
-
-scriptHashObject
-  :: { free :: ScriptHashObject -> Effect Unit
-     , to_bytes :: ScriptHashObject -> Effect (Cbor ScriptHashObject)
-     , to_bech32 :: ScriptHashObject -> Bech32 -> Effect String
-     , to_hex :: ScriptHashObject -> Effect (CborHex ScriptHashObject)
-     }
-scriptHashObject = mkNewtypedFFI (Proxy :: Proxy ScriptHashObject)
-
--- export class ScriptHashes {
---   free(): void;
--- /**
--- * @returns {Uint8Array}
--- */
---   to_bytes(): Uint8Array;
--- /**
--- * @param {Uint8Array} bytes
--- * @returns {ScriptHashes}
--- */
---   static from_bytes(bytes: Uint8Array): ScriptHashes;
--- /**
--- * @returns {string}
--- */
---   to_json(): string;
--- /**
--- * @returns {ScriptHashesJSON}
--- */
---   to_js_value(): ScriptHashesJSON;
--- /**
--- * @param {string} json
--- * @returns {ScriptHashes}
--- */
---   static from_json(json: string): ScriptHashes;
--- /**
--- * @returns {ScriptHashes}
--- */
---   static new(): ScriptHashes;
--- /**
--- * @returns {number}
--- */
---   len(): number;
--- /**
--- * @param {number} index
--- * @returns {ScriptHash}
--- */
---   get(index: number): ScriptHash;
--- /**
--- * @param {ScriptHash} elem
--- */
---   add(elem: ScriptHash): void;
--- }
-
-newtype ScriptHashes = ScriptHashes
-  ( JSObject
-    ( from_bytes :: EffectMth1 (Cbor ScriptHashesObject) ScriptHashesObject
-    , from_json :: EffectMth1 JsonString ScriptHashesObject
-    , new :: EffectMth0 ScriptHashesObject
-    )
-  )
-
-derive instance Newtype ScriptHashes _
-
-scriptHashes
-  :: { from_bytes :: ScriptHashes -> Cbor ScriptHashesObject -> Effect ScriptHashesObject
-     , from_json :: ScriptHashes -> JsonString -> Effect ScriptHashesObject
-     , new :: ScriptHashes -> Effect ScriptHashesObject
-     }
-scriptHashes = mkNewtypedFFI (Proxy :: Proxy ScriptHashes)
-
-newtype ScriptHashesObject = ScriptHashesObject
-  ( JSObject
-    ( free :: EffectMth0 Unit
-    , to_bytes :: EffectMth0 (Cbor ScriptHashesObject)
-    , to_json :: EffectMth0 JsonString
-    , to_js_value :: EffectMth0 Json
-    , len :: EffectMth0 Int
-    , get :: EffectMth1 Int ScriptHashObject
-    , add :: EffectMth1 ScriptHashObject Unit
-    )
-  )
-
-derive instance Newtype ScriptHashesObject _
-
-scriptHashesObject
-  :: { free :: ScriptHashesObject -> Effect Unit
-     , to_bytes :: ScriptHashesObject -> Effect (Cbor ScriptHashesObject)
-     , to_json :: ScriptHashesObject -> Effect JsonString
-     , to_js_value :: ScriptHashesObject -> Effect Json
-     , len :: ScriptHashesObject -> Effect Int
-     , get :: ScriptHashesObject -> Int -> Effect ScriptHashObject
-     , add :: ScriptHashesObject -> ScriptHashObject -> Effect Unit
-     }
-scriptHashesObject = mkNewtypedFFI (Proxy :: Proxy ScriptHashesObject)
-
 
 -- export class Assets {
 --   free(): void;
@@ -1091,6 +941,8 @@ newtype TransactionOutputObject = TransactionOutputObject
   ( JSObject
       ( free :: EffectMth0 Unit
       , address :: EffectMth0 AddressObject
+      , amount :: EffectMth0 ValueObject
+      , datum :: EffectMth0 (Opt DatumObject)
       )
   )
 
@@ -1099,8 +951,170 @@ derive instance Newtype TransactionOutputObject _
 transactionOutputObject
   :: { free :: TransactionOutputObject -> Effect Unit
      , address :: TransactionOutputObject -> Effect AddressObject
+     , amount :: TransactionOutputObject -> Effect ValueObject
+     , datum :: TransactionOutputObject -> Effect (Opt DatumObject)
      }
 transactionOutputObject = mkNewtypedFFI (Proxy :: Proxy TransactionOutputObject)
+
+-- Placeholders:
+
+foreign import data PlutusData :: Type
+
+foreign import data PlutusDataObject :: Type
+
+-- export class Datum {
+--   free(): void;
+-- /**
+-- * @returns {Uint8Array}
+-- */
+--   to_bytes(): Uint8Array;
+-- /**
+-- * @param {Uint8Array} bytes
+-- * @returns {Datum}
+-- */
+--   static from_bytes(bytes: Uint8Array): Datum;
+-- /**
+-- * @returns {string}
+-- */
+--   to_json(): string;
+-- /**
+-- * @returns {DatumJSON}
+-- */
+--   to_js_value(): DatumJSON;
+-- /**
+-- * @param {string} json
+-- * @returns {Datum}
+-- */
+--   static from_json(json: string): Datum;
+-- /**
+-- * @param {DataHash} data_hash
+-- * @returns {Datum}
+-- */
+--   static new_data_hash(data_hash: DataHash): Datum;
+-- /**
+-- * @param {PlutusData} data
+-- * @returns {Datum}
+-- */
+--   static new_data(data: PlutusData): Datum;
+-- /**
+-- * @returns {number}
+-- */
+--   kind(): number;
+-- /**
+-- * @returns {DataHash | undefined}
+-- */
+--   as_data_hash(): DataHash | undefined;
+-- /**
+-- * @returns {PlutusData | undefined}
+-- */
+--   as_inline_data(): PlutusData | undefined;
+-- }
+
+newtype Datum = Datum
+  ( JSObject
+      ( from_bytes :: EffectMth1 (Cbor DatumObject) DatumObject
+      , from_json :: EffectMth1 JsonString DatumObject
+      , new_data_hash :: EffectMth1 DataHashObject DatumObject
+      , new_data :: EffectMth1 PlutusDataObject DatumObject
+      )
+  )
+
+derive instance Newtype Datum _
+
+datum
+  :: { from_bytes :: Datum -> (Cbor DatumObject) -> Effect DatumObject
+     , from_json :: Datum -> JsonString -> Effect DatumObject
+     , new_data_hash :: Datum -> DataHashObject -> Effect DatumObject
+     , new_data :: Datum -> PlutusDataObject -> Effect DatumObject
+     }
+datum = mkNewtypedFFI (Proxy :: Proxy Datum)
+
+newtype DatumObject = DatumObject
+  ( JSObject
+      ( free :: EffectMth0 Unit
+      , "kind" :: EffectMth0 Int
+      , as_data_hash :: EffectMth0 DataHashObject
+      , as_inline_data :: EffectMth0 PlutusDataObject
+      )
+  )
+
+derive instance Newtype DatumObject _
+
+datumObject
+  :: { free :: DatumObject -> Effect Unit
+     , "kind" :: DatumObject -> Effect Int
+     , as_data_hash :: DatumObject -> Effect DataHashObject
+     , as_inline_data :: DatumObject -> Effect PlutusDataObject
+     }
+datumObject = mkNewtypedFFI (Proxy :: Proxy DatumObject)
+
+-- export class DataHash {
+--   free(): void;
+-- /**
+-- * @param {Uint8Array} bytes
+-- * @returns {DataHash}
+-- */
+--   static from_bytes(bytes: Uint8Array): DataHash;
+-- /**
+-- * @returns {Uint8Array}
+-- */
+--   to_bytes(): Uint8Array;
+-- /**
+-- * @param {string} prefix
+-- * @returns {string}
+-- */
+--   to_bech32(prefix: string): string;
+-- /**
+-- * @param {string} bech_str
+-- * @returns {DataHash}
+-- */
+--   static from_bech32(bech_str: string): DataHash;
+-- /**
+-- * @returns {string}
+-- */
+--   to_hex(): string;
+-- /**
+-- * @param {string} hex
+-- * @returns {DataHash}
+-- */
+--   static from_hex(hex: string): DataHash;
+-- }
+
+newtype DataHash = DataHash
+  ( JSObject
+      ( from_bytes :: EffectMth1 (Cbor DataHashObject) DataHashObject
+      , from_bech32 :: EffectMth1 String DataHashObject
+      , from_hex :: EffectMth1 String DataHashObject
+      )
+  )
+
+derive instance Newtype DataHash _
+
+dataHash
+  :: { from_bytes :: DataHash -> (Cbor DataHashObject) -> Effect DataHashObject
+     , from_bech32 :: DataHash -> String -> Effect DataHashObject
+     , from_hex :: DataHash -> String -> Effect DataHashObject
+     }
+dataHash = mkNewtypedFFI (Proxy :: Proxy DataHash)
+
+newtype DataHashObject = DataHashObject
+  ( JSObject
+      ( free :: EffectMth0 Unit
+      , to_bytes :: EffectMth0 (Cbor DataHashObject)
+      , to_bech32 :: EffectMth1 String String
+      , to_hex :: EffectMth0 (CborHex DataHashObject)
+      )
+  )
+
+derive instance Newtype DataHashObject _
+
+dataHashObject
+  :: { free :: DataHashObject -> Effect Unit
+     , to_bytes :: DataHashObject -> Effect (Cbor DataHashObject)
+     , to_bech32 :: DataHashObject -> String -> Effect String
+     , to_hex :: DataHashObject -> Effect (CborHex DataHashObject)
+     }
+dataHashObject = mkNewtypedFFI (Proxy :: Proxy DataHashObject)
 
 -- export class TransactionUnspentOutput {
 --   free(): void;
@@ -1128,9 +1142,6 @@ transactionOutputObject = mkNewtypedFFI (Proxy :: Proxy TransactionOutputObject)
 -- */
 --   output(): TransactionOutput;
 -- }
-
--- FIXME: missing binding.
-foreign import data TransactionInputObject :: Type
 
 newtype TransactionUnspentOutput = TransactionUnspentOutput
   ( JSObject
@@ -1164,8 +1175,145 @@ transactionUnspentOutputObject
      }
 transactionUnspentOutputObject = mkNewtypedFFI (Proxy :: Proxy TransactionUnspentOutputObject)
 
--- Just a stub
-foreign import data TransactionHashObject :: Type
+-- export class TransactionInput {
+--   free(): void;
+-- /**
+-- * @returns {Uint8Array}
+-- */
+--   to_bytes(): Uint8Array;
+-- /**
+-- * @param {Uint8Array} bytes
+-- * @returns {TransactionInput}
+-- */
+--   static from_bytes(bytes: Uint8Array): TransactionInput;
+-- /**
+-- * @returns {string}
+-- */
+--   to_json(): string;
+-- /**
+-- * @returns {TransactionInputJSON}
+-- */
+--   to_js_value(): TransactionInputJSON;
+-- /**
+-- * @param {string} json
+-- * @returns {TransactionInput}
+-- */
+--   static from_json(json: string): TransactionInput;
+-- /**
+-- * @returns {TransactionHash}
+-- */
+--   transaction_id(): TransactionHash;
+-- /**
+-- * @returns {BigNum}
+-- */
+--   index(): BigNum;
+-- /**
+-- * @param {TransactionHash} transaction_id
+-- * @param {BigNum} index
+-- * @returns {TransactionInput}
+-- */
+--   static new(transaction_id: TransactionHash, index: BigNum): TransactionInput;
+-- }
+
+newtype TransactionInput = TransactionInput
+  ( JSObject
+      ( from_bytes :: EffectMth1 (Cbor TransactionInputObject) TransactionInputObject
+      , new :: EffectMth1 TransactionInputObject TransactionInputObject
+      )
+  )
+
+derive instance Newtype TransactionInput _
+
+transactionInput
+  :: { from_bytes :: TransactionInput -> (Cbor TransactionInputObject) -> Effect TransactionInputObject
+     , new :: TransactionInput -> TransactionInputObject -> Effect TransactionInputObject
+     }
+transactionInput = mkNewtypedFFI (Proxy :: Proxy TransactionInput)
+
+newtype TransactionInputObject = TransactionInputObject
+  ( JSObject
+      ( free :: EffectMth0 Unit
+      , transaction_id :: EffectMth0 TransactionHashObject
+      , index :: EffectMth0 BigNumObject
+      )
+  )
+
+derive instance Newtype TransactionInputObject _
+
+transactionInputObject
+  :: { free :: TransactionInputObject -> Effect Unit
+     , transaction_id :: TransactionInputObject -> Effect TransactionHashObject
+     , index :: TransactionInputObject -> Effect BigNumObject
+     }
+transactionInputObject = mkNewtypedFFI (Proxy :: Proxy TransactionInputObject)
+
+-- export class TransactionHash {
+--   free(): void;
+-- /**
+-- * @param {Uint8Array} bytes
+-- * @returns {TransactionHash}
+-- */
+--   static from_bytes(bytes: Uint8Array): TransactionHash;
+-- /**
+-- * @returns {Uint8Array}
+-- */
+--   to_bytes(): Uint8Array;
+-- /**
+-- * @param {string} prefix
+-- * @returns {string}
+-- */
+--   to_bech32(prefix: string): string;
+-- /**
+-- * @param {string} bech_str
+-- * @returns {TransactionHash}
+-- */
+--   static from_bech32(bech_str: string): TransactionHash;
+-- /**
+-- * @returns {string}
+-- */
+--   to_hex(): string;
+-- /**
+-- * @param {string} hex
+-- * @returns {TransactionHash}
+-- */
+--   static from_hex(hex: string): TransactionHash;
+-- }
+
+newtype TransactionHash = TransactionHash
+  ( JSObject
+      ( from_bytes :: EffectMth1 (Cbor TransactionHashObject) TransactionHashObject
+      , from_bech32 :: EffectMth1 String TransactionHashObject
+      , from_hex :: EffectMth1 String TransactionHashObject
+      )
+  )
+
+derive instance Newtype TransactionHash _
+
+transactionHash
+  :: { from_bytes :: TransactionHash -> (Cbor TransactionHashObject) -> Effect TransactionHashObject
+     , from_bech32 :: TransactionHash -> String -> Effect TransactionHashObject
+     , from_hex :: TransactionHash -> String -> Effect TransactionHashObject
+     }
+transactionHash = mkNewtypedFFI (Proxy :: Proxy TransactionHash)
+
+newtype TransactionHashObject = TransactionHashObject
+  ( JSObject
+      ( free :: EffectMth0 Unit
+      , to_bytes :: EffectMth0 (Cbor TransactionHashObject)
+      , to_bech32 :: EffectMth1 String Bech32
+      , to_hex :: EffectMth0 (CborHex TransactionHashObject)
+      )
+  )
+
+derive instance Newtype TransactionHashObject _
+
+transactionHashObject
+  :: { free :: TransactionHashObject -> Effect Unit
+     , to_bytes :: TransactionHashObject -> Effect (Cbor TransactionHashObject)
+     , to_bech32 :: TransactionHashObject -> String -> Effect Bech32
+     , to_hex :: TransactionHashObject -> Effect (CborHex TransactionHashObject)
+     }
+transactionHashObject = mkNewtypedFFI (Proxy :: Proxy TransactionHashObject)
 
 -- export class BigNum {
 --   free(): void;
@@ -1251,7 +1399,7 @@ bigNum = mkNewtypedFFI (Proxy :: Proxy BigNum)
 newtype BigNumObject = BigNumObject
   ( JSObject
       ( free :: EffectMth0 Unit
-      , to_bytes :: EffectMth0 Uint8Array
+      , to_bytes :: EffectMth0 (Cbor BigNumObject)
       , to_str :: EffectMth0 String
       , is_zero :: EffectMth0 Boolean
       , checked_mul :: EffectMth1 BigNum BigNum
@@ -1268,7 +1416,7 @@ derive instance Newtype BigNumObject _
 
 bigNumObject
   :: { free :: BigNumObject -> Effect Unit
-     , to_bytes :: BigNumObject -> Effect Uint8Array
+     , to_bytes :: BigNumObject -> Effect (Cbor BigNumObject)
      , to_str :: BigNumObject -> Effect String
      , is_zero :: BigNumObject -> Effect Boolean
      , checked_mul :: BigNumObject -> BigNum -> Effect BigNum
@@ -1346,4 +1494,84 @@ bigIntObject ::
   , to_str :: BigIntObject -> Effect String
   }
 bigIntObject = mkNewtypedFFI (Proxy :: Proxy BigIntObject)
+
+-- export class ScriptDataHash {
+--   free(): void;
+-- /**
+-- * @param {Uint8Array} bytes
+-- * @returns {ScriptDataHash}
+-- */
+--   static from_bytes(bytes: Uint8Array): ScriptDataHash;
+-- /**
+-- * @returns {Uint8Array}
+-- */
+--   to_bytes(): Uint8Array;
+-- /**
+-- * @param {string} prefix
+-- * @returns {string}
+-- */
+--   to_bech32(prefix: string): string;
+-- /**
+-- * @param {string} bech_str
+-- * @returns {ScriptDataHash}
+-- */
+--   static from_bech32(bech_str: string): ScriptDataHash;
+-- /**
+-- * @returns {string}
+-- */
+--   to_hex(): string;
+-- /**
+-- * @param {string} hex
+-- * @returns {ScriptDataHash}
+-- */
+--   static from_hex(hex: string): ScriptDataHash;
+-- }
+newtype ScriptDataHash = ScriptDataHash
+  ( JSObject
+      ( from_bytes :: EffectMth1 (Cbor ScriptDataHashObject) ScriptDataHashObject
+      , from_bech32 :: EffectMth1 String ScriptDataHashObject
+      , from_hex :: EffectMth1 String ScriptDataHashObject
+      )
+  )
+
+derive instance Newtype ScriptDataHash _
+
+scriptDataHash ::
+  { from_bytes :: ScriptDataHash -> (Cbor ScriptDataHashObject) -> Effect ScriptDataHashObject
+  , from_bech32 :: ScriptDataHash -> String -> Effect ScriptDataHashObject
+  , from_hex :: ScriptDataHash -> String -> Effect ScriptDataHashObject
+  }
+scriptDataHash = mkNewtypedFFI (Proxy :: Proxy ScriptDataHash)
+
+newtype ScriptDataHashObject = ScriptDataHashObject
+  ( JSObject
+      ( free :: EffectMth0 Unit
+      , to_bytes :: EffectMth0 Uint8Array
+      , to_bech32 :: EffectMth1 String String
+      , to_hex :: EffectMth0 (CborHex ScriptDataHashObject)
+      )
+  )
+
+derive instance Newtype ScriptDataHashObject _
+
+scriptDataHashObject ::
+  { free :: ScriptDataHashObject -> Effect Unit
+  , to_bytes :: ScriptDataHashObject -> Effect Uint8Array
+  , to_bech32 :: ScriptDataHashObject -> String -> Effect String
+  , to_hex :: ScriptDataHashObject -> Effect (CborHex ScriptDataHashObject)
+  }
+scriptDataHashObject = mkNewtypedFFI (Proxy :: Proxy ScriptDataHashObject)
+
+
+foreign import data Redeemer :: Type
+
+foreign import data RedeemerObject :: Type
+
+foreign import data Redeemers :: Type
+
+foreign import data RedeemersObject :: Type
+
+foreign import data PlutusList :: Type
+
+foreign import data PlutusListObject :: Type
 

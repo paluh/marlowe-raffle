@@ -17,12 +17,13 @@ import Data.Date (Date)
 import Data.DateTime (DateTime(..), Hour, Minute, Time(..))
 import Data.DateTime.ISO (parseISODate)
 import Data.Decimal (Decimal)
-import Data.Either (Either(..), either, note)
+import Data.Either (Either(..), either, hush, note)
 import Data.Enum (class BoundedEnum, toEnum, upFromIncluding)
 import Data.Foldable (fold, foldMap, null, traverse_)
 import Data.FoldableWithIndex (foldMapWithIndex)
 import Data.FormURLEncoded.Query (FieldId(..), Query)
 import Data.FormURLEncoded.Query as FormURLEncoded
+import Data.Formatter.DateTime (formatDateTime)
 import Data.Formatter.Parser.Number (parseDigit)
 import Data.Map (Map)
 import Data.Map as Map
@@ -33,7 +34,7 @@ import Data.Newtype (class Newtype, un, unwrap)
 import Data.Profunctor (class Profunctor, dimap)
 import Data.Profunctor.Choice (class Choice, right)
 import Data.String as String
-import Data.Tuple (fst)
+import Data.Tuple (fst, snd)
 import Data.Undefined.NoProblem (Opt, fromOpt)
 import Data.Undefined.NoProblem (toMaybe, undefined) as NoProblem
 import Data.Undefined.NoProblem.Closed (class Coerce, coerce) as NoProblem
@@ -560,23 +561,34 @@ dateTimeField
   :: forall a builderM validatorM
    . Monad builderM
   => Monad validatorM
-  => Maybe JSX
+  => Maybe DateTime
+  -> Maybe JSX
   -> Maybe JSX
   -> Batteries.Validator validatorM String (Maybe DateTime) a
   -> FormSpecBuilderT builderM (StatelessBootstrapFormSpec validatorM) Query a
-dateTimeField possibleLabel possibleHelpText dateTimeValidator = do
+dateTimeField possibleInitial possibleLabel possibleHelpText dateTimeValidator = do
   let
+    initials = do
+      let
+        possibleInitials = do
+          dt <- possibleInitial
+          df <- hush $ formatDateTime "YYYY-MM-DD" dt
+          tf <- hush $ formatDateTime "hh:mm:ss" dt
+          pure (df /\ tf)
+      fromMaybe ("" /\ "") possibleInitials
     dateTimeValidationStep errorId = formSpecBuilderT $ pure $ StatelessFormSpec.liftValidator
       (UrlEncoded.fromValidator errorId dateTimeValidator)
     fieldsFormBuilder multiFieldErrorId = dateTimeValidationStep multiFieldErrorId <<< ado
       di <- dateInput
         { layout: Inline
+        , initial: fst initials
         , validator: identity
         , touched: false
         }
 
       ti <- timeInput
         { layout: Inline
+        , initial: snd initials
         , validator: identity
         , touched: false
         }
@@ -709,7 +721,10 @@ data ChoiceFieldChoices
       { switch :: Boolean
       , choices :: ArrayAL 1 RadioFieldChoice -- use `solo` / `solo'` to create
       }
-  | SelectFieldChoices (ArrayAL 1 SelectFieldChoice) -- use `duet` / `duet'` to create
+  | SelectFieldChoices
+      { choices :: ArrayAL 1 SelectFieldChoice -- use `duet` / `duet'` to create
+      , monospace :: Boolean
+      }
 
 type ChoiceFieldOptionalPropsRow r =
   ( label :: Maybe JSX
@@ -792,7 +807,7 @@ renderChoiceField
             else "form-check"
         DOM.div { className } $ map renderChoice (ArrayAL.toArray choices')
 
-      SelectFieldChoices choices' -> do
+      SelectFieldChoices { choices: choices', monospace } -> do
         let
           renderOption { disabled, label: label', value } = do
             DOM.option { value, disabled } [ DOOM.text label' ]
@@ -805,7 +820,9 @@ renderChoiceField
           select =
             Bootstrap.Form.select
               { onChange: onChangeHandler
-              , className: if inline then "mb-md-1" else ""
+              , className:
+                if inline then "mb-md-1" else ""
+                <> if monospace then " font-monospace" else ""
               , value: selectedValue
               , id: idStr
               , name: nameStr
@@ -920,10 +937,13 @@ choiceField' useElement possibleArr props = do
               asChoice' = asChoice mkCfg
             map asChoice' arr
         }
-      UseSelectField mkCfg -> SelectFieldChoices do
-        let
-          asChoice' = asChoice mkCfg
-        map asChoice' arr
+      UseSelectField mkCfg -> SelectFieldChoices
+        { choices: do
+            let
+              asChoice' = asChoice mkCfg
+            map asChoice' arr
+        , monospace: false
+        }
 
     props' :: { | props' }
     props' = Record.merge
@@ -940,6 +960,7 @@ type BooleanFieldPropsRow r =
   , helpText :: Opt JSX
   , layout :: Opt FieldLayout
   , name :: Opt FieldId
+  , disabled :: Opt Boolean
   , initial :: Opt Boolean
   , touched :: Opt Boolean
   | r
@@ -978,7 +999,7 @@ booleanField props = do
         name
         (booleanAsValue initial)
         ( renderBooleanField
-            { disabled: false
+            { disabled: fromOpt false props'.disabled
             , layout: fromOpt (MultiColumn col3spacings) props'.layout
             , name
             , label: props'.label

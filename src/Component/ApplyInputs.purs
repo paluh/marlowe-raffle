@@ -257,11 +257,14 @@ mkChoiceFormComponent = do
     --   }
     partialFormResult /\ setPartialFormResult <- useState' Nothing
     let
-      choices = SelectFieldChoices do
-        let
-          toChoice idx (ChoiceInput (V1.ChoiceId name _) _ _) = do
-            selectFieldChoice name (show idx)
-        ArrayAL.fromNonEmptyArray $ mapWithIndex toChoice choiceInputs
+      choices = SelectFieldChoices
+        { choices: do
+            let
+              toChoice idx (ChoiceInput (V1.ChoiceId name _) _ _) = do
+                selectFieldChoice name (show idx)
+            ArrayAL.fromNonEmptyArray $ mapWithIndex toChoice choiceInputs
+        , monospace: false
+        }
 
       validator :: Batteries.Validator Effect _ _ _
       validator = do

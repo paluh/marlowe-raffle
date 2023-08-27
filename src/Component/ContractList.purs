@@ -14,6 +14,7 @@ import Component.ContractTemplates.Swap as Swap
 import Component.CreateContract (runLiteTag)
 import Component.CreateContract as CreateContract
 import Component.Types (ContractInfo(..), MessageContent(..), MessageHub(..), MkComponentM, Slotting(..), WalletInfo)
+import Component.Types.AppTags (AppTags(..), ExtraTags(..))
 import Component.Types.ContractInfo (MarloweInfo(..))
 import Component.Types.ContractInfo as ContractInfo
 import Component.Widget.Table (orderingHeader) as Table
@@ -38,16 +39,14 @@ import Data.DateTime (DateTime)
 import Data.DateTime.Instant (Instant, instant)
 import Data.DateTime.Instant as Instant
 import Data.Either (Either, hush)
-import Data.Foldable (any, fold, or)
+import Data.Foldable (fold, or)
 import Data.FormURLEncoded.Query (FieldId(..), Query)
 import Data.Function (on)
 import Data.JSDate (fromDateTime) as JSDate
-import Data.List (concat, intercalate)
-import Data.List as List
+import Data.List (intercalate)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, isNothing)
 import Data.Newtype (un)
-import Data.Set as Set
 import Data.String (contains, length)
 import Data.String.Pattern (Pattern(..))
 import Data.Time.Duration as Duration
@@ -59,7 +58,7 @@ import Effect.Class (liftEffect)
 import Language.Marlowe.Core.V1.Semantics.Types (Contract)
 import Language.Marlowe.Core.V1.Semantics.Types as V1
 import Marlowe.Runtime.Web.Client (put')
-import Marlowe.Runtime.Web.Types (ContractHeader(ContractHeader), Payout(..), PutTransactionRequest(..), Runtime(..), ServerURL, SlotNumber(..), Tags(..), TransactionEndpoint, TransactionsEndpoint, TxOutRef, WithdrawalsEndpoint, toTextEnvelope, txOutRefToString)
+import Marlowe.Runtime.Web.Types (ContractHeader(ContractHeader), PutTransactionRequest(..), Runtime(..), ServerURL, SlotNumber(..), Tags(..), TransactionEndpoint, TransactionsEndpoint, TxOutRef, WithdrawalsEndpoint, toTextEnvelope, txOutRefToString)
 import Marlowe.Runtime.Web.Types as Runtime
 import Polyform.Validator (liftFnM)
 import React.Basic (fragment)
@@ -201,7 +200,7 @@ mkContractList = do
         contracts <- possibleContracts
         let
           -- Quick and dirty hack to display just submited contracts as first
-          someFutureBlockNumber = Runtime.BlockNumber 9058430
+          someFutureBlockNumber = Runtime.BlockNumber 19058430
           sortedContracts = case ordering.orderBy of
             OrderByCreationDate -> Array.sortBy (compare `on` (fromMaybe someFutureBlockNumber <<< map (_.blockNo <<< un Runtime.BlockHeader) <<< ContractInfo.createdAt)) contracts
             OrderByLastUpdateDate -> Array.sortBy (compare `on` (fromMaybe someFutureBlockNumber <<< map (_.blockNo <<< un Runtime.BlockHeader) <<< ContractInfo.updatedAt)) contracts
@@ -213,11 +212,10 @@ mkContractList = do
           filtered = do
             queryValue <- possibleQueryValue
             contracts <- possibleContracts'
-            pure $ contracts # Array.filter \(ContractInfo { contractId, tags: contractTags }) -> do
+            pure $ contracts # Array.filter \(ContractInfo { contractId, tags: AppTags { extraTags: ExtraTags extraTags }}) -> do
               let
-                tagList = runLiteTags contractTags
                 pattern = Pattern queryValue
-              contains pattern (txOutRefToString contractId) || or (map (contains pattern) tagList)
+              contains pattern (txOutRefToString contractId) || or (map (contains pattern) extraTags)
         filtered <|> possibleContracts'
 
       --         pure $ if ordering.orderAsc
@@ -378,7 +376,7 @@ mkContractList = do
                                 , th $ DOOM.text "Actions"
                                 ]
                             ]
-                        , DOM.tbody {} $ contracts <#> \ci@(ContractInfo { _runtime, endpoints, marloweInfo, tags: contractTags }) ->
+                        , DOM.tbody {} $ contracts <#> \ci@(ContractInfo { _runtime, endpoints, marloweInfo, tags: AppTags { extraTags: ExtraTags extraTags }}) ->
                             let
                               ContractHeader { contractId } = _runtime.contractHeader
                               tdCentered = DOM.td { className: "text-center" }
@@ -425,9 +423,7 @@ mkContractList = do
                                     ]
                                 , tdCentered
                                     [ do
-                                        let
-                                          tags = runLiteTags contractTags
-                                        DOOM.text $ intercalate ", " tags
+                                        DOOM.text $ intercalate ", " extraTags
                                     ]
                                 , tdCentered
                                     [ do
@@ -450,21 +446,22 @@ mkContractList = do
                                             , onClick: mempty
                                             }
                                           _, _ -> mempty
-                                    , case marloweInfo, possibleWalletContext of
-                                        Just (MarloweInfo { currencySymbol: Just currencySymbol, state: _, unclaimedPayouts }), Just { balance } -> do
-                                          let
-                                            balance' = Map.filterKeys (eq currencySymbol) balance
-                                            roleTokens = List.toUnfoldable <<< concat <<< map Set.toUnfoldable <<< map Map.keys <<< Map.values $ balance'
-                                          case Array.uncons (Array.intersect roleTokens (map (\(Payout { role }) -> role) unclaimedPayouts)) of
-                                            Just { head, tail } ->
-                                              linkWithIcon
-                                                { icon: unsafeIcon $ "cash-coin warning-color" <> actionIconSizing
-                                                , label: mempty
-                                                , tooltipText: Just "This wallet has funds available for withdrawal from this contract. Click to submit a withdrawal"
-                                                , onClick: setModalAction $ Withdrawal runtime.withdrawalsEndpoint (NonEmptyArray.cons' head tail) contractId
-                                                }
-                                            _ -> mempty
-                                        _, _ -> mempty
+                                    -- Drop withdrawals
+                                    -- , case marloweInfo, possibleWalletContext of
+                                    --     Just (MarloweInfo { currencySymbol: Just currencySymbol, state: _, unclaimedPayouts }), Just { balance } -> do
+                                    --       let
+                                    --         balance' = Map.filterKeys (eq currencySymbol) balance
+                                    --         roleTokens = List.toUnfoldable <<< concat <<< map Set.toUnfoldable <<< map Map.keys <<< Map.values $ balance'
+                                    --       case Array.uncons (Array.intersect roleTokens (map (\(Payout { role }) -> role) unclaimedPayouts)) of
+                                    --         Just { head, tail } ->
+                                    --           linkWithIcon
+                                    --             { icon: unsafeIcon $ "cash-coin warning-color" <> actionIconSizing
+                                    --             , label: mempty
+                                    --             , tooltipText: Just "This wallet has funds available for withdrawal from this contract. Click to submit a withdrawal"
+                                    --             , onClick: setModalAction $ Withdrawal runtime.withdrawalsEndpoint (NonEmptyArray.cons' head tail) contractId
+                                    --             }
+                                    --         _ -> mempty
+                                    --     _, _ -> mempty
                                     ]
                                 ]
                         ]

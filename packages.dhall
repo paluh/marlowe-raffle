@@ -147,32 +147,6 @@ in  upstream
         ]
         "https://github.com/purescript-polyform/polyform.git"
         "v0.9.2"
-  with polyform-batteries-core =
-      mkPackage
-        [ "debug"
-        , "decimals"
-        , "filterable"
-        , "numbers"
-        , "polyform"
-        , "prelude"
-        , "record-extra"
-        , "test-unit"
-        ]
-        "https://github.com/purescript-polyform/batteries-core.git"
-        "v0.3.0"
-  with polyform-batteries-urlencoded =
-      mkPackage
-        [ "argonaut"
-        , "console"
-        , "debug"
-        , "effect"
-        , "form-urlencoded"
-        , "polyform-batteries-core"
-        , "psci-support"
-        , "spec"
-        ]
-        "https://github.com/purescript-polyform/batteries-urlencoded.git"
-        "v0.4.1"
   with
     -- react-bootstrap = ../purescript-react-bootstrap/spago.dhall as Location
     react-bootstrap = mkPackage
@@ -268,3 +242,50 @@ in  upstream
       ]
       "https://github.com/paluh/purescript-foreign-generic.git"
       "a5c23d29e72619624978446293ac9bb45ccd2fde"
+  -- Isomers
+  with isomers = ../isomers/spago.dhall as Location
+  with http-types =
+      mkPackage
+        [ "tuples", "unicode" ]
+        "https://github.com/Woody88/purescript-http-types.git"
+        "3bcbf8b63d6ffce66356186519365cbf38697eb2"
+  with polyform-batteries-core = ../batteries-core/spago.dhall as Location
+  with polyform-batteries-env = ../batteries-env/spago.dhall as Location
+  with polyform-batteries-json = ../batteries-json/spago.dhall as Location
+  with polyform-batteries-urlencoded =
+      ../batteries-urlencoded/spago.dhall as Location
+  with record-prefix =
+      mkPackage
+        [ "assert"
+        , "effect"
+        , "heterogeneous"
+        , "prelude"
+        , "record"
+        , "typelevel-eval"
+        , "typelevel-prelude"
+        , "variant"
+        ]
+        "https://github.com/dariooddenino/purescript-record-prefix.git"
+        "3dc89e61245872b726ba6f4ed7843d4126a290bb"
+  with web-router =
+      mkPackage
+        [ "aff"
+        , "effect"
+        , "freet"
+        , "indexed-monad"
+        , "prelude"
+        , "profunctor-lenses"
+        , "routing"
+        ]
+        "https://github.com/robertdp/purescript-web-router"
+        "v0.3.0"
+  with
+    simple-csv = ../purescript-simple-csv/spago.dhall as Location
+  with
+    errors =
+      mkPackage
+        [ "control", "effect", "either", "maybe", "prelude"
+        , "transformers"
+        ]
+        "https://github.com/CarstenKoenig/purescript-errors.git"
+        "edfd8b1a285920e725a7fec32e736c5d59561772"

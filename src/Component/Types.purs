@@ -15,6 +15,8 @@ import Prelude
 
 import CardanoMultiplatformLib as CardanoMultiplatformLib
 import Component.Types.ContractInfo (ContractInfo(..)) as Exports
+import Component.Types.Raffle (ContractStatus(..), OnChainContractThreadContinuation(..), OnChainContractsThread(..), PriceFundingContracts(..), PricePolicy(..), RaffleContracts(..), RaffleDeploymentPlan(..), RaffleOnChainStatus(..), RaffleOrganizer(..), RaffleRoundContract(..), initialDepositTagsFromPlan, mkRaffleContracts, rolesConfigFromPlan) as Exports
+import Component.Types.AppTags (AppTags(..), ExtraTags(..), PriceAssetName, RaffleId, RaffleOnChainInfo, RaffleRound(..), RaffleTags(..), fromRuntimeTags, mkExtraTags, raffleAppTag, toRuntimeTags) as Exports
 import Control.Monad.Reader (ReaderT)
 import Data.BigInt.Argonaut (BigInt)
 import Data.List (List)

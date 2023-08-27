@@ -209,12 +209,12 @@ contractFormSpec = do
       , touched: false
       }
 
-    partyDepositDeadline <- dateTimeField (Just $ DOOM.text "Party Deposit timeout") (Just $ DOOM.text "Party timeout help") reqValidator'
-    counterPartyDepositDeadline <- dateTimeField (Just $ DOOM.text "Counter-Party Deposit timeout") (Just $ DOOM.text "Counter-Party timeout help") reqValidator'
-    firstWindowBeginning <- dateTimeField (Just $ DOOM.text "First Window Beginning timeout") (Just $ DOOM.text "First Window Beginning timeout help") reqValidator'
-    firstWindowDeadline <- dateTimeField (Just $ DOOM.text "First Window Deadline timeout") (Just $ DOOM.text "First Window Deadline timeout help") reqValidator'
-    secondWindowBeginning <- dateTimeField (Just $ DOOM.text "Second Window Beginning timeout") (Just $ DOOM.text "Second Window Beginning timeout help") reqValidator'
-    secondWindowDeadline <- dateTimeField (Just $ DOOM.text "Second Window Ending timeout") (Just $ DOOM.text "Second Window Deadline timeout help") reqValidator'
+    partyDepositDeadline <- dateTimeField Nothing (Just $ DOOM.text "Party Deposit timeout") (Just $ DOOM.text "Party timeout help") reqValidator'
+    counterPartyDepositDeadline <- dateTimeField Nothing (Just $ DOOM.text "Counter-Party Deposit timeout") (Just $ DOOM.text "Counter-Party timeout help") reqValidator'
+    firstWindowBeginning <- dateTimeField Nothing (Just $ DOOM.text "First Window Beginning timeout") (Just $ DOOM.text "First Window Beginning timeout help") reqValidator'
+    firstWindowDeadline <- dateTimeField Nothing (Just $ DOOM.text "First Window Deadline timeout") (Just $ DOOM.text "First Window Deadline timeout help") reqValidator'
+    secondWindowBeginning <- dateTimeField Nothing (Just $ DOOM.text "Second Window Beginning timeout") (Just $ DOOM.text "Second Window Beginning timeout help") reqValidator'
+    secondWindowDeadline <- dateTimeField Nothing (Just $ DOOM.text "Second Window Ending timeout") (Just $ DOOM.text "Second Window Deadline timeout help") reqValidator'
     in
       { partyTokenAmount: BigInt.fromInt partyTokenAmount
       , counterPartyTokenAmount: BigInt.fromInt counterPartyTokenAmount

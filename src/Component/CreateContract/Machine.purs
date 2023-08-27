@@ -52,12 +52,6 @@ type RequiredWalletContext = WalletAddresses
 -- | This state machine is pretty linear and all state which contains `errors` can be retried.
 data State
   = DefiningContract
-  | DefiningRoleTokens
-      { contract :: V1.Contract
-      , tags :: Tags
-      , roleNames :: NonEmptyArray V1.TokenName
-      , errors :: Maybe String
-      }
   | FetchingRequiredWalletContext
       { contract :: V1.Contract
       , tags :: Tags
@@ -91,10 +85,7 @@ data State
       }
 
 data Action
-  = TriggerSubmission V1.Contract Tags
-  | DefineRoleTokens
-  | DefineRoleTokensFailed String
-  | DefineRoleTokensSucceeded RolesConfig
+  = TriggerSubmission (Maybe RolesConfig) V1.Contract Tags
   | FetchRequiredWalletContext
   | FetchRequiredWalletContextFailed String
   | FetchRequiredWalletContextSucceeded RequiredWalletContext
@@ -120,20 +111,8 @@ step :: State -> Action -> State
 step state action = do
   case state of
     DefiningContract -> case action of
-      TriggerSubmission contract tags -> case Array.uncons (rolesInContract contract) of
-        Nothing -> FetchingRequiredWalletContext { contract, tags, rolesConfig: Nothing, errors: Nothing }
-        Just { head, tail } ->
-          DefiningRoleTokens { contract, tags, roleNames: Array.NonEmpty.cons' head tail, errors: Nothing }
-      _ -> state
-    DefiningRoleTokens { contract, tags, roleNames, errors: Just _ } -> case action of
-      DefineRoleTokens -> DefiningRoleTokens { contract, tags, roleNames, errors: Nothing }
-      _ -> state
-    DefiningRoleTokens { contract, tags, roleNames, errors: Nothing } -> case action of
-      DefineRoleTokensFailed error -> DefiningRoleTokens { contract, tags, roleNames, errors: Just error }
-      DefineRoleTokensSucceeded rolesConfig -> FetchingRequiredWalletContext { contract, tags, rolesConfig: Just rolesConfig, errors: Nothing }
-      _ -> state
-    FetchingRequiredWalletContext r@{ errors: Just _ } -> case action of
-      FetchRequiredWalletContext -> FetchingRequiredWalletContext $ r{ errors = Nothing }
+      TriggerSubmission rolesConfig contract tags ->
+        FetchingRequiredWalletContext { contract, tags, rolesConfig, errors: Nothing }
       _ -> state
     FetchingRequiredWalletContext r -> case action of
       FetchRequiredWalletContextFailed error -> FetchingRequiredWalletContext $ r { errors = Just error }
@@ -165,7 +144,7 @@ step state action = do
 
 -- | This is an initial action which we should trigger
 -- | when we want to start the contract creation process.
-triggerSubmission :: V1.Contract -> Tags -> Action
+triggerSubmission :: Maybe RolesConfig -> V1.Contract -> Tags -> Action
 triggerSubmission = TriggerSubmission
 
 initialState :: State
@@ -227,9 +206,9 @@ requestToAffAction = case _ of
       possibleWalletAddresses <- liftAff $ (Right <$> walletContext cardanoMultiplatformLib wallet) `catchError` (pure <<< Left)
       case possibleWalletAddresses of
         Left err -> pure $ FetchRequiredWalletContextFailed $ show err
-        Right (WalletContext { changeAddress: Just changeAddress, usedAddresses }) -> do
+        Right Nothing -> pure $ FetchRequiredWalletContextFailed "Wallet context fetching failed (invalid change address?)"
+        Right (Just (WalletContext { changeAddress, usedAddresses })) -> do
           pure $ FetchRequiredWalletContextSucceeded { changeAddress, usedAddresses }
-        Right (WalletContext { changeAddress: Nothing }) -> pure $ FetchRequiredWalletContextFailed "Wallet does not have a change address"
     SignTxRequest { walletInfo, tx } -> do
       let
         WalletInfo { wallet } = walletInfo

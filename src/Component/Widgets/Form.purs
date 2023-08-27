@@ -4,8 +4,9 @@ import Prelude
 
 import CardanoMultiplatformLib (Bech32, bech32FromString)
 import CardanoMultiplatformLib as CardanoMultiplatformLib
+import Contrib.Language.Marlowe.Core.V1 (CurrencySymbol'(..), Sha256Hex(..), sha256Hex)
 import Contrib.Polyform.FormSpecBuilder (FormSpecBuilderT)
-import Contrib.ReactBootstrap.FormSpecBuilders.StatelessFormSpecBuilders (StatelessBootstrapFormSpec, TextInputOptionalProps, TextInputProps, TextInputValidator, textInput)
+import Contrib.ReactBootstrap.FormSpecBuilders.StatelessFormSpecBuilders (StatelessBootstrapFormSpec, TextAreaOptionalProps, TextInputOptionalProps, TextInputProps, TextInputValidator, TextAreaProps, textArea, textInput)
 import ConvertableOptions (class Defaults)
 import Data.Array.ArrayAL (ArrayAL)
 import Data.Array.ArrayAL as ArrayAL
@@ -21,14 +22,19 @@ import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
+import Data.String as String
+import Data.String.Regex as Regex
+import Data.String.Regex.Unsafe as Regex
 import Data.Time.Duration (Seconds)
-import Data.Traversable (traverse)
+import Data.Traversable (for, sequence, traverse)
 import Data.Validation.Semigroup (V(..))
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Random (random)
 import Effect.Ref as Ref
 import Effect.Uncurried (EffectFn1)
+import HexString as HexString
+import Language.Marlowe.Core.V1.Semantics.Types as V1
 import Polyform.Batteries as Batteries
 import Polyform.Batteries.UrlEncoded as UrlEncoded
 import Polyform.Batteries.UrlEncoded as UrleEncoded
@@ -225,5 +231,61 @@ addressInput cardanoMultiplatformLib props = do
         Nothing -> pure $ Left [ "Invalid bech32 address" ]
         Just bech32 -> pure $ Right $ Just bech32
     props' :: { validator :: AddressInputValidator validatorM | props }
+    props' = Record.insert (Proxy :: Proxy "validator") validator props
+  textInput props'
+
+-- Addresses separated by comma
+type MultiAddressInputValidator m = TextInputValidator m (Array Bech32)
+
+multiAddressInput
+  :: forall builderM props validatorM
+   . Monad builderM
+  => MonadEffect validatorM
+  => Row.Lacks "validator" props
+  => Row.Cons "validator" (MultiAddressInputValidator validatorM) props ( validator :: MultiAddressInputValidator validatorM | props)
+  => Defaults TextAreaOptionalProps { validator :: MultiAddressInputValidator validatorM | props } (TextAreaProps validatorM (Array Bech32))
+  => CardanoMultiplatformLib.Lib
+  -> { | props }
+  -> FormSpecBuilderT builderM (StatelessBootstrapFormSpec validatorM) Query (Array Bech32)
+multiAddressInput cardanoMultiplatformLib props = do
+  let
+    separator = Regex.unsafeRegex "[, \n]+" mempty
+    validator = liftFnMEither $ map String.trim >>> case _ of
+      Nothing -> pure $ Right []
+      Just "" -> pure $ Right []
+      Just value -> liftEffect $ do
+        let
+          addresses = Regex.split separator value
+        addresses' <- for addresses \address -> do
+          bech32FromString cardanoMultiplatformLib address >>= case _ of
+            Nothing -> pure $ Left [ "Invalid bech32 address: " <> address ]
+            Just bech32 -> pure $ Right bech32
+        pure $ sequence addresses'
+    props' :: { validator :: MultiAddressInputValidator validatorM | props }
+    props' = Record.insert (Proxy :: Proxy "validator") validator props
+  textArea props'
+
+type CurrencySymbolInputValidator m = TextInputValidator m (Maybe CurrencySymbol')
+
+currencySymbolInput
+  :: forall builderM props validatorM
+   . Monad builderM
+  => MonadEffect validatorM
+  => Row.Lacks "validator" props
+  => Row.Cons "validator" (CurrencySymbolInputValidator validatorM) props ( validator :: CurrencySymbolInputValidator validatorM | props)
+  => Defaults TextInputOptionalProps { validator :: CurrencySymbolInputValidator validatorM | props } (TextInputProps validatorM (Maybe CurrencySymbol'))
+  => { | props }
+  -> FormSpecBuilderT builderM (StatelessBootstrapFormSpec validatorM) Query (Maybe CurrencySymbol')
+currencySymbolInput props = do
+  let
+    validator = liftFnMEither case _ of
+      Nothing -> pure $ Right Nothing
+      Just value -> liftEffect $ do
+        let
+          value' = String.trim value
+        case HexString.hex value' >>= sha256Hex of
+          Nothing -> pure $ Left [ "Invalid hex value" ]
+          Just sha256 -> pure $ Right $ Just $ CurrencySymbol' sha256
+    props' :: { validator :: CurrencySymbolInputValidator validatorM | props }
     props' = Record.insert (Proxy :: Proxy "validator") validator props
   textInput props'

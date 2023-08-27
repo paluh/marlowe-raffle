@@ -2,11 +2,13 @@ module CardanoMultiplatformLib.Types
   ( JsonString
   , jsonStringToString
   , jsonStringFromString
+  , jsonStringFromJson
   , unsafeJsonString
   , cborHexToHex
   , cborHexToCbor
   , cborToCborHex
   , unsafeCborHex
+  , cborToUint8Array
   -- FIXME: Import only the type
   , CborHex(..)
   , Cbor
@@ -17,7 +19,7 @@ module CardanoMultiplatformLib.Types
 
 import Prelude
 
-import Data.Argonaut (class DecodeJson, class EncodeJson, parseJson, stringify)
+import Data.Argonaut (class DecodeJson, class EncodeJson, Json, parseJson, stringify)
 import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Either (hush)
 import Data.Maybe (Maybe)
@@ -38,7 +40,7 @@ cborHexToCbor :: forall a. CborHex a -> Cbor a
 cborHexToCbor = Cbor <<< HexString.decode <<< cborHexToHex
 
 cborToCborHex :: forall a. Cbor a -> CborHex a
-cborToCborHex = CborHex <<< HexString.encode <<< unCbor
+cborToCborHex = CborHex <<< HexString.encode <<< cborToUint8Array
 
 unsafeCborHex :: forall a. Hex -> CborHex a
 unsafeCborHex = CborHex
@@ -46,13 +48,16 @@ unsafeCborHex = CborHex
 newtype Cbor :: Type -> Type
 newtype Cbor a = Cbor Uint8Array
 
-unCbor :: forall a. Cbor a -> Uint8Array
-unCbor (Cbor a) = a
+cborToUint8Array :: forall a. Cbor a -> Uint8Array
+cborToUint8Array (Cbor a) = a
 
 newtype JsonString = JsonString String
 
 unsafeJsonString :: String -> JsonString
 unsafeJsonString = JsonString
+
+jsonStringFromJson :: Json -> JsonString
+jsonStringFromJson = JsonString <<< stringify
 
 jsonStringFromString :: String -> Maybe JsonString
 jsonStringFromString = map (JsonString <<< stringify) <<< hush <<< parseJson

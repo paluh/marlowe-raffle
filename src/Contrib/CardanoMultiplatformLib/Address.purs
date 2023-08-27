@@ -2,7 +2,9 @@ module CardanoMultiplatformLib.Address where
 
 import Prelude
 
-import CardanoMultiplatformLib.Types (Bech32, Cbor)
+import CardanoMultiplatformLib.Ed25519KeyHash (Ed25519KeyHash, Ed25519KeyHashObject)
+import CardanoMultiplatformLib.Types (Bech32, Cbor, JsonString)
+import Contrib.CardanoMultiplatformLib.ScriptHash (ScriptHashObject)
 import Data.Argonaut (Json)
 import Data.Newtype (class Newtype)
 import Data.Undefined.NoProblem (Opt)
@@ -176,7 +178,7 @@ newtype AddressObject = AddressObject
       -- , as_pointer :: EffectMth0 (Maybe PointerAddressObject)
       -- , as_enterprise :: EffectMth0 (Maybe EnterpriseAddressObject)
       -- , as_base :: EffectMth0 (Maybe BaseAddressObject)
-      -- , payment_cred :: EffectMth0 (Maybe StakeCredentialObject)
+      , payment_cred :: EffectMth0 (Opt StakeCredentialObject)
       -- , staking_cred :: EffectMth0 (Maybe StakeCredentialObject)
       )
   )
@@ -196,10 +198,103 @@ addressObject
      -- , as_pointer :: AddressObject -> EffectMth0 (Maybe PointerAddressObject)
      -- , as_enterprise :: AddressObject -> EffectMth0 (Maybe EnterpriseAddressObject)
      -- , as_base :: AddressObject -> EffectMth0 (Maybe BaseAddressObject)
-     -- , payment_cred :: AddressObject -> EffectMth0 (Maybe StakeCredentialObject)
+     , payment_cred :: AddressObject -> Effect (Opt StakeCredentialObject)
      -- , staking_cred :: AddressObject -> EffectMth0 (Maybe StakeCredentialObject)
      }
 addressObject = mkNewtypedFFI (Proxy :: Proxy AddressObject)
+
+-- export class StakeCredential {
+--   free(): void;
+-- /**
+-- * @param {Ed25519KeyHash} hash
+-- * @returns {StakeCredential}
+-- */
+--   static from_keyhash(hash: Ed25519KeyHash): StakeCredential;
+-- /**
+-- * @param {ScriptHash} hash
+-- * @returns {StakeCredential}
+-- */
+--   static from_scripthash(hash: ScriptHash): StakeCredential;
+-- /**
+-- * @returns {Ed25519KeyHash | undefined}
+-- */
+--   to_keyhash(): Ed25519KeyHash | undefined;
+-- /**
+-- * @returns {ScriptHash | undefined}
+-- */
+--   to_scripthash(): ScriptHash | undefined;
+-- /**
+-- * @returns {number}
+-- */
+--   kind(): number;
+-- /**
+-- * @returns {Uint8Array}
+-- */
+--   to_bytes(): Uint8Array;
+-- /**
+-- * @param {Uint8Array} bytes
+-- * @returns {StakeCredential}
+-- */
+--   static from_bytes(bytes: Uint8Array): StakeCredential;
+-- /**
+-- * @returns {string}
+-- */
+--   to_json(): string;
+-- /**
+-- * @returns {StakeCredentialJSON}
+-- */
+--   to_js_value(): StakeCredentialJSON;
+-- /**
+-- * @param {string} json
+-- * @returns {StakeCredential}
+-- */
+--   static from_json(json: string): StakeCredential;
+-- }
+
+newtype StakeCredential = StakeCredential
+  ( JSObject
+      ( from_keyhash :: EffectMth1 Ed25519KeyHash StakeCredentialObject
+      -- , from_scripthash :: EffectMth1 ScriptHash StakeCredentialObject
+      , from_bytes :: EffectMth1 (Cbor StakeCredentialObject) StakeCredentialObject
+      , from_json :: EffectMth1 String StakeCredentialObject
+      )
+  )
+
+derive instance Newtype StakeCredential _
+
+stakeCredential
+  :: { from_keyhash :: StakeCredential -> Ed25519KeyHash -> Effect StakeCredentialObject
+     --, from_scripthash :: StakeCredential -> ScriptHash -> Effect StakeCredentialObject
+     , from_bytes :: StakeCredential -> (Cbor StakeCredentialObject) -> Effect StakeCredentialObject
+     , from_json :: StakeCredential -> String -> Effect StakeCredentialObject
+     }
+stakeCredential = mkNewtypedFFI (Proxy :: Proxy StakeCredential)
+
+newtype StakeCredentialObject = StakeCredentialObject
+  ( JSObject
+      ( free :: EffectMth0 Unit
+      , to_keyhash :: EffectMth0 (Opt Ed25519KeyHashObject)
+      , to_scripthash :: EffectMth0 (Opt ScriptHashObject)
+      , "kind" :: EffectMth0 Number
+      , to_bytes :: EffectMth0 (Cbor StakeCredentialObject)
+      , to_json :: EffectMth0 String
+      , to_js_value :: EffectMth0 JsonString
+      )
+  )
+
+derive instance Newtype StakeCredentialObject _
+
+stakeCredentialObject
+  :: { free :: StakeCredentialObject -> Effect Unit
+     , to_keyhash :: StakeCredentialObject -> Effect (Opt Ed25519KeyHashObject)
+     , to_scripthash :: StakeCredentialObject -> Effect (Opt ScriptHashObject)
+     , "kind" :: StakeCredentialObject -> Effect Number
+     , to_bytes :: StakeCredentialObject -> Effect (Cbor StakeCredentialObject)
+     , to_json :: StakeCredentialObject -> Effect String
+     , to_js_value :: StakeCredentialObject -> Effect JsonString
+     }
+stakeCredentialObject = mkNewtypedFFI (Proxy :: Proxy StakeCredentialObject)
+
 
 -- foreign import data Address :: Type
 --

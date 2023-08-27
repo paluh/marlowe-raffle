@@ -92,6 +92,22 @@ useFirstRender = React.do
     pure $ pure unit
   pure firstRender
 
+-- useState ::
+--   forall state.
+--   state ->
+--   Hook (UseState state) (state /\ ((state -> state) -> Effect Unit))
+-- useState initialState =
+--   unsafeHook do
+--     runEffectFn2 useState_ (mkFn2 Tuple) initialState
+-- 
+-- useState' ::
+--   forall state.
+--   state ->
+--   Hook (UseState state) (state /\ (state -> Effect Unit))
+-- useState' initialState = useState initialState <#> rmap (_ <<< const)
+-- 
+-- foreign import data UseState :: Type -> Type -> Type
+
 -- | To avoid "closure capture" in `useEffect` and `useLayoutEffect`
 -- | we need to use `useRef` to store the current value.
 -- | This hook is a shortcut for that.
@@ -110,6 +126,32 @@ useStateRef version state =
 
 useStateRef' :: forall st. Eq st => st -> Hook (UseStateRef st st) (Ref st)
 useStateRef' st = useStateRef st st
+
+type UseStateWithRef state hooks =
+  UseState state hooks
+    & UseStateRef state state
+
+-- useState' + useStateRef
+useStateWithRef
+  :: forall state
+   . Eq state
+  => state
+  -> Hook (UseStateWithRef state) (state /\ Ref state /\ ((state -> state) -> Effect Unit))
+useStateWithRef initialState = React.do
+  state /\ setState <- useState initialState
+  stateRef <- useStateRef' state
+  pure $ state /\ stateRef /\ setState
+
+-- The same but uses useState' internally and provide simpler setter `(state -> Effect Unit)`
+useStateWithRef'
+  :: forall state
+   . Eq state
+  => state
+  -> Hook (UseStateWithRef state) (state /\ Ref state /\ (state -> Effect Unit))
+useStateWithRef' initialState = React.do
+  state /\ setState <- useState' initialState
+  stateRef <- useStateRef' state
+  pure $ state /\ stateRef /\ setState
 
 -- Run an action on regular basis. Use the cleanup action when unmounting or on deps change.
 useSetInterval
@@ -187,3 +229,18 @@ useVersionedState' a = React.do
   let
     setState = updateState <<< const
   pure $ currState /\ setState
+
+newtype UseVersionedStateWithRef a hooks = UseVersionedStateWithRef (UseStateRef Int a (UseVersionedState a hooks))
+
+derive instance Newtype (UseVersionedStateWithRef a hooks) _
+
+useVersionedStateWithRef
+  :: forall a
+   . a
+  -> Hook
+      (UseVersionedStateWithRef a)
+      ({ state :: a, version :: Int } /\ Ref a /\ ((a -> a) -> Effect Unit))
+useVersionedStateWithRef a = React.coerceHook React.do
+  currState /\ updateState <- useVersionedState a
+  stateRef <- useStateRef currState.version currState.state
+  pure $ currState /\ stateRef /\ updateState

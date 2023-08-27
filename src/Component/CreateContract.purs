@@ -50,12 +50,12 @@ import Effect.Now (now)
 import JS.Unsafe.Stringify (unsafeStringify)
 import Language.Marlowe.Core.V1.Semantics.Types as V1
 import Marlowe.Runtime.Web.Client (ClientError)
-import Marlowe.Runtime.Web.Types (ContractEndpoint, Metadata(..), PostContractsError, RoleTokenConfig(..), RolesConfig(..), Tags(..))
+import Marlowe.Runtime.Web.Types (ContractEndpoint, PostContractsError, RoleTokenConfig(..), RolesConfig(..), Tags(..))
 import Partial.Unsafe (unsafeCrashWith)
 import Polyform.Validator (liftFn)
 import Polyform.Validator (liftFnEither, liftFnMMaybe) as Validator
 import React.Basic (fragment) as DOOM
-import React.Basic.DOM as DOOM
+import React.Basic.DOM (div, div_, input, text) as DOOM
 import React.Basic.DOM (css)
 import React.Basic.DOM as R
 import React.Basic.DOM.Simplified.Generated as DOM
@@ -294,7 +294,7 @@ mkComponent = do
               setCurrentRun $ Just $ Automatic
             AutoRun false -> do
               setCurrentRun $ Just $ Manual false
-          applyAction' $ Machine.TriggerSubmission contract tags
+          applyAction' $ Machine.TriggerSubmission Nothing contract tags
         _ -> pure unit
 
     { formState, onSubmit: onSubmit', result } <- useStatelessFormSpec
@@ -306,7 +306,7 @@ mkComponent = do
     possibleWalletInfo <- React.useContext walletInfoCtx
     React.useEffect (_.changeAddress <<< un WalletContext <<< snd <$> possibleWalletInfo) $ do
       case possibleWalletInfo of
-        Just (_ /\ (WalletContext { changeAddress: Just changeAddress })) -> do
+        Just (_ /\ (WalletContext { changeAddress })) -> do
           { multiChoiceTest: initialContract } <- liftEffect $ mkInitialContracts changeAddress
           case Map.lookup contractFieldId formState.fields of
             Just { touched, onChange } -> do
@@ -355,20 +355,6 @@ mkComponent = do
               formActions
           }
 
-      Machine.DefiningRoleTokens { roleNames } -> do
-        let
-          onSuccess' :: RolesConfig -> Effect Unit
-          onSuccess' rolesConfig =
-            let
-              action = Machine.DefineRoleTokensSucceeded rolesConfig
-            in
-              applyAction action
-
-        BodyLayout.component
-          { title: stateToTitle submissionState
-          , description: stateToDetailedDescription submissionState
-          , content: roleTokenComponent { onDismiss: pure unit, onSuccess: onSuccess', connectedWallet, roleNames }
-          }
       Machine.ContractCreated { contract, createTxResponse } -> do
         let
           { links: { contract: contractEndpoint } } = createTxResponse
@@ -455,7 +441,6 @@ mkComponent = do
 stateToTitle :: Machine.State -> String
 stateToTitle state = case state of
   Machine.DefiningContract -> "Defining contract"
-  Machine.DefiningRoleTokens {} -> "Defining role tokens"
   Machine.FetchingRequiredWalletContext {} -> "Fetching required wallet context"
   Machine.CreatingTx {} -> "Creating transaction"
   Machine.SigningTx {} -> "Signing transaction"
@@ -471,7 +456,6 @@ machineStepsCardinality = 7
 machineStateToStepIndex :: Machine.State -> StepIndex
 machineStateToStepIndex state = StepIndex $ case state of
   Machine.DefiningContract -> 1
-  Machine.DefiningRoleTokens {} -> 2
   Machine.FetchingRequiredWalletContext {} -> 3
   Machine.CreatingTx {} -> 4
   Machine.SigningTx {} -> 5
@@ -500,9 +484,6 @@ stateToDetailedDescription state = case state of
         , DOM.a { href: "https://play.marlowe.iohk.io/#/", target: "_blank", className: "white-color" } [ DOOM.text " Marlowe Playground" ]
         , DOOM.text " to generate it. After creating a contract in the simulator within the Marlowe Playground, you can use the \"Download JSON\" button to obtain the contract in JSON format. Once you have the JSON file, you can either enter it in the input field to the right or upload it using the \"Upload\" button."
         ]
-    ]
-  Machine.DefiningRoleTokens {} -> DOOM.div_
-    [ DOM.p {} $ DOOM.text "NOT IMPLEMENTED YET"
     ]
   Machine.FetchingRequiredWalletContext { errors: Nothing } -> DOOM.div_
     [ DOM.p {}
@@ -557,9 +538,6 @@ stateToDetailedDescription state = case state of
 stateToDescription :: Machine.State -> JSX
 stateToDescription state = case state of
   Machine.DefiningContract -> DOOM.text "Please define your contract."
-  Machine.DefiningRoleTokens { errors } -> case errors of
-    Nothing -> DOOM.text "Defining role tokens."
-    Just err -> DOOM.text $ "Defining role tokens failed: " <> err
   Machine.FetchingRequiredWalletContext { errors } -> case errors of
     Nothing -> DOOM.text "Fetching required wallet context."
     Just err -> DOOM.text $ "Fetching required wallet context failed: " <> err

@@ -6,7 +6,9 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.String.CodeUnits as String.CodeUnits
 import Data.Tuple.Nested ((/\))
+import HexString (Hex, hexToString)
 
 compareMarloweJsonKeys :: String -> String -> Ordering
 compareMarloweJsonKeys = do
@@ -45,3 +47,20 @@ compareMarloweJsonKeys = do
       Just ordering -> ordering
       Nothing -> compare a b
 
+newtype Sha256Hex = Sha256Hex Hex
+
+derive instance Eq Sha256Hex
+derive instance Ord Sha256Hex
+
+sha256Hex :: Hex -> Maybe Sha256Hex
+sha256Hex hex = if String.CodeUnits.length (hexToString hex) == 64
+  then Just $ Sha256Hex hex
+  else Nothing
+
+newtype CurrencySymbol' = CurrencySymbol' Sha256Hex
+
+derive instance Eq CurrencySymbol'
+derive instance Ord CurrencySymbol'
+
+currencySymbolToString :: CurrencySymbol' -> String
+currencySymbolToString (CurrencySymbol' (Sha256Hex hex)) = hexToString hex

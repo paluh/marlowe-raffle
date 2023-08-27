@@ -2,6 +2,7 @@ module Component.Types.ContractInfo where
 
 import Prelude
 
+import Component.Types.AppTags (AppTags)
 import Contrib.Data.Foldable (foldMapFlipped)
 import Control.Alt ((<|>))
 import Control.Parallel (parTraverse)
@@ -19,7 +20,7 @@ import Language.Marlowe.Core.V1.Semantics.Types as V1
 import Marlowe.Runtime.Web.Client (ClientError, getResource') as Runtime
 import Marlowe.Runtime.Web.Streaming (TxHeaderWithEndpoint)
 import Marlowe.Runtime.Web.Types (BlockHeader, ContractEndpoint, ContractHeader(..), ContractId, TransactionEndpoint, TransactionsEndpoint, Tx(..), TxHeader(..)) as Runtime
-import Marlowe.Runtime.Web.Types (Payout(..), ServerURL, Tags)
+import Marlowe.Runtime.Web.Types (Payout, ServerURL)
 
 data UserContractRole
   = ContractParty
@@ -29,12 +30,6 @@ data UserContractRole
 derive instance Generic UserContractRole _
 instance Show UserContractRole where
   show = genericShow
-
--- Cash flow direction in the context of the wallet.
-data UserCashFlowDirection
-  = IncomingFlow
-  | OutgoingFlow
-  | InternalFlow
 
 newtype MarloweInfo = MarloweInfo
   { initialContract :: V1.Contract
@@ -50,7 +45,7 @@ derive instance Eq MarloweInfo
 newtype ContractInfo = ContractInfo
   { contractId :: Runtime.ContractId
   , marloweInfo :: Maybe MarloweInfo
-  , tags :: Tags
+  , tags :: AppTags
   , endpoints ::
       { contract :: Runtime.ContractEndpoint
       , transactions :: Maybe Runtime.TransactionsEndpoint
@@ -80,7 +75,7 @@ updatedAt ci@(ContractInfo { _runtime: { transactions } }) =
 fetchAppliedInputs :: ServerURL -> Array Runtime.TransactionEndpoint -> Aff (V (Array (Runtime.ClientError String)) (Array ((Maybe V1.InputContent) /\ V1.TimeInterval)))
 fetchAppliedInputs serverURL transactionEndpoints = do
   results <- transactionEndpoints `flip parTraverse` \transactionEndpoint -> do
-    Runtime.getResource' serverURL transactionEndpoint {}
+    Runtime.getResource' serverURL transactionEndpoint {} {}
 
   pure $ results `foldMapFlipped` case _ of
     Left err -> V (Left [err])

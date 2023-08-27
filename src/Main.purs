@@ -6,27 +6,24 @@ import CardanoMultiplatformLib as CardanoMultiplatformLib
 import Component.App (mkApp)
 import Component.MessageHub (mkMessageHub)
 import Component.Types (Slotting(..))
+import Component.Types.AppTags (raffleAppTag)
 import Contrib.Data.Argonaut (JsonParser)
 import Contrib.Effect as Effect
-import Contrib.JsonBigInt (fromJson)
 import Contrib.JsonBigInt as JsonBigInt
 import Control.Monad.Reader (runReaderT)
-import Data.Argonaut (Json, decodeJson, fromString, (.:))
+import Data.Argonaut (Json, decodeJson, (.:))
 import Data.BigInt.Argonaut as BigInt
-import Data.Map as Map
-import Data.Maybe (Maybe(..), fromJust, isJust, maybe)
-import Data.Newtype (un)
+import Data.Maybe (Maybe(..), fromJust, maybe)
 import Data.Tuple.Nested ((/\))
-import Debug (traceM)
 import Effect (Effect)
-import Effect.Aff (Milliseconds(..), delay, launchAff_)
+import Effect.Aff (Milliseconds(..), launchAff_)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Exception (throw)
 import Marlowe.Runtime.Web as Marlowe.Runtime.Web
-import Marlowe.Runtime.Web.Streaming (MaxPages(..), PollingInterval(..), RequestInterval(..))
+import Marlowe.Runtime.Web.Streaming (PollingInterval(..), RequestInterval(..))
 import Marlowe.Runtime.Web.Streaming as Streaming
-import Marlowe.Runtime.Web.Types (BlockHeader(..), BlockNumber(..), ContractHeader(..), ServerURL(..))
+import Marlowe.Runtime.Web.Types (ServerURL(..))
 import Partial.Unsafe (unsafePartial)
 import React.Basic (createContext)
 import React.Basic.DOM.Client (createRoot, renderRoot)
@@ -85,11 +82,13 @@ main configJson = do
       let
         reqInterval = RequestInterval (Milliseconds 50.0)
         pollInterval = PollingInterval (Milliseconds 60_000.0)
-        filterContracts getContractResponse = case un ContractHeader getContractResponse.resource of
-          { block: Nothing } -> true
-          { block: Just (BlockHeader { blockNo: BlockNumber blockNo }) } -> blockNo > 909000 -- 904279
-        maxPages = Just (MaxPages 1)
-      Streaming.mkContractsWithTransactions pollInterval reqInterval filterContracts maxPages config.marloweWebServerUrl
+        -- filterContracts getContractResponse = case un ContractHeader getContractResponse.resource of
+        --  { block: Nothing } -> true
+        --  { block: Just (BlockHeader { blockNo: BlockNumber blockNo }) } -> blockNo > 909000 -- 904279
+        filterContracts _ = true
+        maxPages = Nothing -- Just (MaxPages 1)
+        params = { tags: [ raffleAppTag ] }
+      Streaming.mkContractsWithTransactions pollInterval reqInterval params filterContracts maxPages config.marloweWebServerUrl
 
     CardanoMultiplatformLib.importLib >>= case _ of
       Nothing -> liftEffect $ logger "Cardano serialization lib loading failed"
