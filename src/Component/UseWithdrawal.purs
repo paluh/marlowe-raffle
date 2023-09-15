@@ -6,8 +6,7 @@ import Component.UseWithdrawal.Blockfrost as Blockfrost
 import Component.UseWithdrawal.Machine as M
 import Contrib.Effect.Exception (errorToJson)
 import Contrib.React.Basic.Hooks.UseMooreMachine (UseMooreMachine, useMooreMachine)
-import Data.Argonaut (class EncodeJson, Json, encodeJson, jsonNull)
-import Data.Either (Either(..))
+import Data.Argonaut (Json, encodeJson, jsonNull)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Effect (Effect)
@@ -15,7 +14,7 @@ import Foreign.Internal.Stringify (unsafeStringify)
 import Marlowe.Runtime.Registry (ReferenceScriptUtxo(..))
 import Marlowe.Runtime.Web.Types (TxId(..), TxOutRef(..))
 import Partial.Unsafe (unsafeCrashWith)
-import React.Basic.Hooks (Hook)
+import React.Basic.Hooks (Hook, UseEffect, useEffect)
 import React.Basic.Hooks as React
 import Unsafe.Coerce (unsafeCoerce)
 import Wallet as Wallet
@@ -48,31 +47,61 @@ noInfoError :: String -> String -> HookError
 noInfoError tag msg = { tag, msg, info: jsonNull }
 
 data HookStatus
-  = AwaitingWithdrawal
-    { withdraw :: Effect Unit
-    , lastAttemptResult :: Maybe (Either HookError TxId)
-    }
+  = Initializing String
+  | InitializationFailed HookError
+  | AwaitingWithdrawalTrigger (Effect Unit)
   | ProcessingWithdrawal String
+  | WithdrawalFailed
+    { error :: HookError
+    , retry :: Effect Unit
+    }
+  | WithdrawalSucceeded TxId
+  | FatalError HookError
 
-instance EncodeJson HookStatus where
-  encodeJson = case _ of
-    AwaitingWithdrawal { lastAttemptResult } -> encodeJson
-      { status: "AwaitingWithdrawal"
-      , lastAttemptResult: case lastAttemptResult of
-          Nothing -> pure jsonNull
-          Just (Left err) ->
-            Just $ encodeJson { value: err, tag: "Error" }
-          Just (Right txId) ->
-            Just $ encodeJson { value: txId, tag: "Success" }
+foreign import data TsHookStatus :: Type
+
+-- Let's encode HookStatus as TS/JS friendly type
+encodeTsHookStatus :: HookStatus -> TsHookStatus
+encodeTsHookStatus = do
+  let
+    coerceToTsHookStatus :: forall a. a -> TsHookStatus
+    coerceToTsHookStatus = unsafeCoerce
+  case _ of
+    Initializing msg -> coerceToTsHookStatus
+      { status: "Initializing"
+      , step: msg
       }
-    ProcessingWithdrawal txId -> encodeJson
+    InitializationFailed error -> coerceToTsHookStatus
+      { status: "InitializationFailed"
+      , error: encodeJson error
+      }
+    AwaitingWithdrawalTrigger trigger -> coerceToTsHookStatus
+      { status: "AwaitingWithdrawalTrigger"
+      , trigger
+      }
+    ProcessingWithdrawal msg -> coerceToTsHookStatus
       { status: "ProcessingWithdrawal"
-      , txId
+      , msg: msg
       }
+    WithdrawalFailed { error, retry } -> coerceToTsHookStatus
+      { status: "WithdrawalFailed"
+      , error: encodeJson error
+      , retry
+      }
+    WithdrawalSucceeded txId -> coerceToTsHookStatus
+      { status: "WithdrawalSucceeded"
+      , txId: encodeJson txId
+      }
+    FatalError error -> coerceToTsHookStatus
+      { status: "FatalError"
+      , error: encodeJson error
+      }
+
 type UseWithdrawalHooks hooks =
   UseMooreMachine M.State M.Action M.State hooks
 
-newtype UseWithdrawal hooks = UseWithdrawal (UseWithdrawalHooks hooks)
+newtype UseWithdrawal hooks =
+  UseWithdrawal ((UseWithdrawalHooks hooks) & UseEffect Unit)
 
 derive instance Newtype (UseWithdrawal hooks) _
 
@@ -81,110 +110,101 @@ machineStateToHookStatus
  -> M.State
  -> HookStatus
 machineStateToHookStatus trigger = case _ of
-  M.AwaitingTrigger -> AwaitingWithdrawal
-    { withdraw: trigger
-    , lastAttemptResult: Nothing
-    }
-  M.Initializing _ Nothing -> ProcessingWithdrawal "Initializing"
-  M.Initializing _ (Just err) -> AwaitingWithdrawal
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left $ noInfoError "InitializeError" err
-    }
-  M.FetchingPayoutUTxO _ Nothing -> ProcessingWithdrawal "FetchingPayoutUTxO"
-  M.FetchingPayoutUTxO _ (Just err) -> AwaitingWithdrawal
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left $ noInfoError "FetchPayoutUTxOError" err
-    }
-  M.FindingRoleTokenUTxO _ Nothing -> ProcessingWithdrawal "FindingRoleTokenUTxO"
-  M.FindingRoleTokenUTxO _ (Just err) -> AwaitingWithdrawal
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left $ noInfoError "FindRoleTokenUTxOError" err
-    }
+  M.Initializing _ Nothing -> Initializing "Setup"
+  M.Initializing _ (Just err) -> InitializationFailed $
+    noInfoError "InitializeError" err
+  M.FetchingPayoutUTxO _ Nothing -> Initializing "FetchingPayoutUTxO"
+  M.FetchingPayoutUTxO _ (Just err) -> InitializationFailed  $
+    noInfoError "FetchPayoutUTxOError" err
+  M.FindingRoleTokenUTxO _ Nothing -> Initializing "FindingRoleTokenUTxO"
+  M.FindingRoleTokenUTxO _ (Just err) -> InitializationFailed $
+    noInfoError "FindRoleTokenUTxOError" err
+  M.PayoutUTxOStatusChecking _ Nothing -> Initializing "PayoutUTxOStatusChecking"
+  M.PayoutUTxOStatusChecking _ (Just err) -> InitializationFailed
+    case err of
+      M.PayoutUTxOStatusCheckingError msg ->
+        noInfoError "PayoutUTxOStatusCheckError" msg
+      M.PayoutUTxOAlreadySpent txId ->
+        { tag: "PayoutUTxOAlreadySpentError"
+        , msg: "Payout UTxO already spent"
+        , info: encodeJson txId
+        }
+  M.AwaitingWithdrawalTrigger _ -> AwaitingWithdrawalTrigger trigger
   M.GrabbingCollateralUTxOs _ Nothing -> ProcessingWithdrawal "GrabbingCollateralUTxOs"
-  M.GrabbingCollateralUTxOs _ (Just err) -> AwaitingWithdrawal
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left $ noInfoError "GrabCollateralUTxOsError" err
-    }
-  M.PayoutUTxOStatusChecking _ Nothing -> ProcessingWithdrawal "PayoutUTxOStatusChecking"
-  M.PayoutUTxOStatusChecking _ (Just err) -> AwaitingWithdrawal
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left do
-      case err of
-        M.PayoutUTxOStatusCheckingError msg ->
-          noInfoError "PayoutUTxOStatusCheckError.PayoutUTxOStatusCheckingError" msg
-        M.PayoutUTxOAlreadySpent txId ->
-          { tag: "PayoutUTxOStatusCheckError.PayoutUTxOAlreadySpent"
-          , msg: "Payout UTxO already spent"
-          , info: encodeJson txId
-          }
+  M.GrabbingCollateralUTxOs _ (Just err) -> WithdrawalFailed
+    { error: noInfoError "GrabCollateralUTxOsError" err
+    , retry: trigger
     }
   M.BuildingTx _ Nothing -> ProcessingWithdrawal "BuildingTx"
-  M.BuildingTx _ (Just err) -> AwaitingWithdrawal
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left $ noInfoError "BuildTxError" err
+  M.BuildingTx _ (Just err) -> WithdrawalFailed
+    { error: noInfoError "BuildTxError" err
+    , retry: trigger
     }
   M.SigningTx _ Nothing -> ProcessingWithdrawal "SigningTx"
-  M.SigningTx _ (Just err) -> AwaitingWithdrawal do
-    let
-      err' = case err of
-        M.UserAborted -> noInfoError "SigningTxError.UserAborted" "User aborted signing operation"
+  M.SigningTx _ (Just err) -> WithdrawalFailed
+    { error: case err of
+        M.UserAborted -> noInfoError "UserAbortedError" "User aborted signing operation"
         M.SignTxOperationError walletError ->
-          { tag: "SigningTxError.SignTxOperationError"
+          { tag: "SignTxOperationError"
           , msg: "Some error occured while signing the transaction"
           , info: unsafeCoerce walletError
           }
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left $ err'
+    , retry: trigger
     }
   M.SubmittingTx _ Nothing -> ProcessingWithdrawal "SubmittingTx"
-  M.SubmittingTx _ (Just err) -> AwaitingWithdrawal do
+  M.SubmittingTx _ (Just err) -> WithdrawalFailed do
     let
-      err' = case err of
+      error = case err of
         M.WalletSubmitTxError { msg, info } ->
-          { tag: "SubmittingTxError.WalletSubmitTxError"
+          { tag: "WalletSubmitTxError"
           , msg
           , info
           }
-        M.WitnessKeySetupFailed msg -> noInfoError "SubmittingTxError.WitnessKeySetupFailed" msg
+        M.WitnessKeySetupFailed msg -> noInfoError "WitnessKeySetupFailed" msg
         M.BlockfrostSubmitTxError { msg, info } ->
-          { tag: "SubmittingTxError.BlockfrostSubmitTxError"
+          { tag: "BlockfrostSubmitTxError"
           , msg
           , info
           }
 
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left $ err'
+    { retry: trigger
+    , error
     }
-  M.TxCreated txId -> AwaitingWithdrawal
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Right txId
-    }
-  M.DriverFailure { state, error } -> AwaitingWithdrawal do
-    let
-      err' =
-        { tag: "DriverFailure"
-        , info: errorToJson error
-        , msg: "An error during driver execution with state: " <> unsafeStringify state
-        }
-
-    { withdraw: trigger
-    , lastAttemptResult: Just $ Left $ err'
+  M.TxCreated txId -> WithdrawalSucceeded txId
+  M.DriverFailure { state, error } -> FatalError do
+    { tag: "FatalError"
+    , info: errorToJson error
+    , msg: "An unhandled exception during execution with internal state: " <> unsafeStringify state
     }
 
-useWithdrawal :: Props -> Hook UseWithdrawal HookStatus
-useWithdrawal a = React.coerceHook React.do
+useWithdrawal :: Props -> Hook UseWithdrawal { status :: TsHookStatus, reset :: Props -> Effect Unit }
+useWithdrawal ctx = React.coerceHook React.do
   let
-    triggerAction = M.Trigger
-      { txOutRef: a.txOutRef
-      , blockfrostProjectId: a.blockfrostProjectId
-      , network: a.network
-      , wallet: a.wallet
-      }
-    spec =
-      { initialState: M.AwaitingTrigger
+    spec initialCtx =
+      { initialState: M.Initializing initialCtx Nothing
       , driver: M.driver
       , output: identity
       , step: M.step
       }
-  { state, applyAction } <- useMooreMachine spec
-  pure $ machineStateToHookStatus (applyAction triggerAction) state
+  { state, applyAction, reset } <- useMooreMachine (spec ctx)
+
+  useEffect unit do
+    applyAction $ M.Trigger
+    pure $ pure unit
+
+  let
+    reset' newCtx = do
+      applyAction' <- reset $ Just (spec newCtx)
+      applyAction' M.Trigger
+      pure unit
+
+  pure
+    { status: do
+        let
+          status = machineStateToHookStatus
+            (applyAction M.WithdrawalTrigger)
+            state
+        encodeTsHookStatus status
+    , reset: reset'
+    }
+

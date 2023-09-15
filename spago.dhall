@@ -10,6 +10,7 @@
   , "arrays"
   , "atleast"
   , "avar"
+  , "b64"
   , "bifunctors"
   , "bigints"
   , "checked-exceptions"

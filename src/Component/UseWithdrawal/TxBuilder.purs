@@ -12,16 +12,22 @@ import CardanoMultiplatformLib.Types (cborHexToCbor, jsonStringFromJson, jsonStr
 import Contrib.Cardano as C
 import Control.Monad.Except (ExceptT(..), except, runExceptT, throwError)
 import Control.Monad.Trans.Class (lift)
-import Data.Argonaut (class DecodeJson, class EncodeJson, Json, decodeJson, encodeJson, isNull, jsonNull, jsonParser, stringify)
+import Data.Argonaut (class DecodeJson, class EncodeJson, Json, decodeJson, encodeJson, isNull, jsonNull, jsonParser, stringify, stringifyWithIndent)
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NonEmptyArray
+import Data.ArrayBuffer.Types (Uint8Array)
 import Data.Bifunctor (lmap)
 import Data.BigInt.Argonaut as BigInt
-import Data.Either (Either(..))
+import Data.Either (Either(..), hush)
 import Data.Foldable (fold, foldMap)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Newtype (class Newtype, un)
+import Data.String.Base64.Internal (uint8ArrayToBtoaSafeString)
 import Data.Traversable (for)
+import Data.Tuple (fst)
+import Data.Tuple.Nested ((/\))
 import Data.Undefined.NoProblem as NoProblem
 import Debug (traceM)
 import Effect (Effect)
@@ -30,7 +36,10 @@ import Effect.Uncurried (runEffectFn3)
 import Foreign.Object (Object)
 import Foreign.Object as Object
 import HexString (Hex, hexToString)
-import Marlowe.Runtime.Web.Types (AnUTxO(..), TxOut(..), TxOutRef(..))
+import HexString as HexString
+import Marlowe.Runtime.Web.Types (AnUTxO(..), TxId(..), TxOut(..), TxOutRef(..))
+import Partial.Unsafe (unsafeCrashWith)
+import Unsafe.Coerce (unsafeCoerce)
 
 -- Reference Json object for an transaction:
 --
@@ -132,7 +141,7 @@ buildTx
   :: CardanoMultiplatformLib.Lib
   -> { bech32 :: Bech32, pubKeyHash :: Hex }
   -> C.NonAdaAssetId
-  -> { collaterals :: Array AnUTxO, roleToken :: AnUTxO, payout :: AnUTxO }
+  -> { collaterals :: NonEmptyArray AnUTxO, roleToken :: AnUTxO, payout :: AnUTxO }
   -> PayoutReferenceScriptTxOutRef
   -> Maybe VKeysJson
   -> Effect (Either String (CborHex TransactionObject))
@@ -143,29 +152,35 @@ buildTx cml address roleTokenInfo utxos referenceTxOutRef possibleVKeysJson = ru
     transactionObj <- allocate $ transaction.from_json _Transaction (jsonStringFromJson txJson)
     cbor <- liftEffect $ transactionObject.to_bytes transactionObj
     json <- liftEffect $ transactionObject.to_json transactionObj
+    traceM "The final transaction:"
     traceM json
     pure $ cborToCborHex cbor
 
 newtype VKeysJson = VKeysJson Json
 derive instance Newtype VKeysJson _
 
+-- We assume a byte here which encodes unsigned 8 bit integer and we return signed Int:
+-- https://blog.vjeux.com/2013/javascript/conversion-from-uint8-to-int8-x-24.html
+foreign import uint8ToInt :: Int -> Int
+
 buildTxJson
   :: CML.Lib
   -> { bech32 :: Bech32, pubKeyHash :: Hex }
   -> C.NonAdaAssetId
-  -> { collaterals :: Array AnUTxO, roleToken :: AnUTxO, payout :: AnUTxO }
+  -> { collaterals :: NonEmptyArray AnUTxO, roleToken :: AnUTxO, payout :: AnUTxO }
   -> PayoutReferenceScriptTxOutRef
   -> Maybe VKeysJson
   -> Effect (Either String Json)
 buildTxJson cml address roleTokenInfo { collaterals, roleToken, payout } referenceTxOutRef possibleVKeysJson = runExceptT do
   let
-    origInputs = collaterals <> [ roleToken, payout ]
+    origInputs = Array.sortWith utxoTxOutRef $ NonEmptyArray.toArray collaterals <> [ roleToken, payout ]
     encodeTxOutRef (TxOutRef { txId, txIx }) =
       encodeJson { transaction_id: txId, index: show txIx }
     encodeInput (AnUTxO { txOutRef }) = encodeTxOutRef txOutRef
     inputs = map encodeInput origInputs
     utxoValue (AnUTxO { txOut: TxOut { value } }) = value
     utxoTxOutRef (AnUTxO { txOutRef }) = txOutRef
+
     redeemerIndex = fromMaybe 0 $ Array.elemIndex (utxoTxOutRef payout) $ Array.sort $ origInputs <#> utxoTxOutRef
 
     encodeValue value = do
@@ -196,8 +211,25 @@ buildTxJson cml address roleTokenInfo { collaterals, roleToken, payout } referen
     totalCollateral = feeInt * 150 / 100
     totalCollateralValue = C.lovelaceToValue $ C.lovelaceFromInt totalCollateral
 
-  traceM "totalCollateral"
-  traceM $ show totalCollateral
+    -- {
+    --   "jsonrpc": "2.0",
+    --   "result": [
+    --     {
+    --       "validator": "spend:1",
+    --       "budget": {
+    --         "memory": 5236222,
+    --         "cpu": 1212353
+    --       }
+    --     },
+    --     {
+    --       "validator": "mint:0",
+    --       "budget": {
+    --         "memory": 5000,
+    --         "cpu": 42
+    --       }
+    --     }
+    --   ]
+    -- }
 
 
   amount <- except do
@@ -258,7 +290,7 @@ buildTxJson cml address roleTokenInfo { collaterals, roleToken, payout } referen
   let
     json =  encodeJson
       { body:
-          { inputs: inputs -- I think that there is internal bug which reorders the inputs -- let me check ;-)
+          { inputs: inputs
           , outputs: [ output ]
           , fee: C.lovelaceToString fee
           , collateral: map encodeInput collaterals
@@ -286,6 +318,9 @@ buildTxJson cml address roleTokenInfo { collaterals, roleToken, payout } referen
       , is_valid: encodeJson true
       , auxiliary_data: jsonNull
       }
+  traceM "Transaction with updated witness set:"
+  traceM $ stringifyWithIndent 2 $ json
+
   pure json
 
 witnessSetJsonToWitnessSet
@@ -355,11 +390,27 @@ addWitnessSetVKeyToTx cml txWitnessSetHex txHex = runExceptT $ do
       pure $ encodeJson $ encodeInsert "witness_set" witnessSet' txObj
 
   txJson' <- except $ lmap (\err -> "Witness set update failed on Json operations: " <> err) possibleTxJson'
+
   cbor <- liftEffect $ runGarbageCollector cml do
     _Transaction <- asksLib _."Transaction"
     txObj <- allocate $ transaction.from_json _Transaction $ jsonStringFromJson txJson'
+    traceM "Updated transaction:"
+    json' <- liftEffect $ transactionObject.to_json txObj
+    traceM $ stringifyWithIndent 2 $ fromMaybe jsonNull $ hush $ jsonParser $ jsonStringToString $ json'
     liftEffect $ transactionObject.to_bytes txObj
   pure $ CML.cborToCborHex cbor
+
+--   """ShelleyTxValidationError
+--       ShelleyBasedEraBabbage
+--         (ApplyTxError 
+--             [ UtxowFailure (FromAlonzoUtxowFail (WrappedShelleyEraFailure (MissingScriptWitnessesUTXOW (fromList [ScriptHash \\\"10ec7e02d25f5836b3e1098e0d4d8389e71d7a97a57aa737adc1d1fa\\\"]))))
+--             , UtxowFailure (FromAlonzoUtxowFail (NonOutputSupplimentaryDatums (fromList [SafeHash \\\"1bfbc15026a2ecc9dc6430d851adb9199bb229066b30d07604bebd542a4ed8f1\\\"]) (fromList [])))
+--             , UtxowFailure (FromAlonzoUtxowFail (ExtraRedeemers [RdmrPtr Spend 1]))
+--             , UtxowFailure (FromAlonzoUtxowFail
+--                               (PPViewHashesDontMatch (SJust (SafeHash \\\"cc6d801d5c6b894113f1a89330a4839edbb6306b3c20b7d876925515f4e6155e\\\")) (SJust (SafeHash \\\"62769383a375cef87272fa708b9c344af2e31671ec52c26528ae1aa65f281dfc\\\"))))
+--             ]
+--         )
+--   """
 
 decodeJson' :: forall t. DecodeJson t => Json -> Either String t
 decodeJson' = lmap show <<< decodeJson

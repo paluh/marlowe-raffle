@@ -15,7 +15,7 @@ import Component.MessageHub (mkMessageBox, mkMessagePreview)
 import Component.Types (ContractInfo(..), MessageContent(Success, Info), MessageHub(MessageHub), MkComponentMBase, WalletInfo(..))
 import Component.Types.AppTags as AppTags
 import Component.Types.ContractInfo (MarloweInfo(..))
-import Component.UseWithdrawal (HookStatus(..), useWithdrawal)
+import Component.UseWithdrawal (HookStatus(..), encodeTsHookStatus, useWithdrawal)
 import Component.UseWithdrawal.Blockfrost as B
 import Component.Widgets (link, linkWithIcon)
 import Contrib.Cardano as C
@@ -26,7 +26,7 @@ import Contrib.React.Svg (svgImg)
 import Contrib.ReactSyntaxHighlighter (yamlSyntaxHighlighter)
 import Control.Monad.Error.Class (catchError)
 import Control.Monad.Reader.Class (asks)
-import Data.Argonaut (encodeJson)
+import Data.Argonaut (Json, encodeJson)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (length)
@@ -67,6 +67,7 @@ import ReactBootstrap.Offcanvas (offcanvas)
 import ReactBootstrap.Offcanvas as Offcanvas
 import Record as Record
 import Type.Prelude (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 import Utils.React.Basic.Hooks (useEmitter', useLoopAff, useStateRef, useStateRef')
 import Wallet as Wallet
 import WalletContext (WalletContext(..))
@@ -112,7 +113,7 @@ autoConnectWallet walletBrand onSuccess = liftEffect (window >>= Wallet.cardano)
 
 -- | Use this switch to autoconnect the wallet for testing.
 debugWallet :: Maybe WalletBrand
-debugWallet = Just Yoroi -- Just Lace -- Nami -- Eternl -- Nami -- Nothing
+debugWallet = Just Nami -- Just Lace -- Nami -- Eternl -- Nami -- Nothing
 
 type ContractInfoMap = Map Runtime.ContractId ContractInfo
 
@@ -129,6 +130,7 @@ policyIdsStr = map C.assetIdToString <<< C.valueAssetIds
 
 mkWithdrawalWidget :: MkComponentMBase () (WalletInfo Wallet.Api -> JSX)
 mkWithdrawalWidget = do
+  traceM "V.10"
   liftEffect $ component "WithdrawalWidget" \(WalletInfo walletInfo) -> React.do
     let
       withdrawalProps =
@@ -138,32 +140,37 @@ mkWithdrawalWidget = do
           -- { txId: Runtime.TxId "c93175feff92ddfb571f4d12b9d34ab910594dce54ad4017a5670a0b43a930f5"
           -- , txIx: 0
           -- }
-          { txId: Runtime.TxId "3605db0c5ae9be7623cd4ecb04f8e99d784da35258f2952896b25f7613968b54"
+          { txId: Runtime.TxId "e9e4df445a407ec361bed3f1d281a2bde816243b84fb3c40c09bacc5a9aba107"
           , txIx: 2
           }
         , blockfrostProjectId: B.ProjectId "preprodD9cONxVqzHYtFEL4RObOZ46y4begqNHc"
         }
-    withdrawalStatus <- useWithdrawal withdrawalProps
+    { status: withdrawalStatus, reset }  <- useWithdrawal withdrawalProps
 
-    pure $ case withdrawalStatus of
-      AwaitingWithdrawal { withdraw, lastAttemptResult } -> do
-        -- | Let's dispaly a button which triggers withdrawal
-        -- | and a status message.
-        let
-          statusMessage = case lastAttemptResult of
-            Nothing -> DOOM.text "Awaiting withdrawal"
-            Just (Left err) -> yamlSyntaxHighlighter (encodeJson err) {}
-            Just (Right txId) -> yamlSyntaxHighlighter (encodeJson txId) {}
-        DOM.div {}
-          [ DOM.button
-              { className: "btn btn-primary"
-              , onClick: handler_ withdraw
-              }
-              [ DOOM.text "Withdraw" ]
-          , statusMessage
-          ]
-      ProcessingWithdrawal msg -> DOOM.text msg
-
+    pure $ do
+      let
+        { status } = unsafeCoerce withdrawalStatus
+      case status of
+        "AwaitingWithdrawalTrigger" -> do
+          let
+            { trigger } = unsafeCoerce withdrawalStatus
+          DOM.div {}
+            [ DOM.button
+                { className: "btn btn-primary"
+                , onClick: handler_ trigger
+                }
+                [ DOOM.text "Withdraw" ]
+            ]
+        "WithdrawalFailed" -> do
+          let
+            { error: json :: Json } = unsafeCoerce withdrawalStatus
+          yamlSyntaxHighlighter json {}
+        _ -> do
+          -- | Let's dispaly a button which triggers withdrawal
+          -- | and a status message.
+          let
+            (json :: Json) = unsafeCoerce withdrawalStatus
+          yamlSyntaxHighlighter json {}
 mkApp :: MkComponentMBase () (Unit -> JSX)
 mkApp = do
   landingPage <- mkLandingPage

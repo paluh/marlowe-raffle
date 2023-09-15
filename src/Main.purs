@@ -37,7 +37,6 @@ type Config =
   { marloweWebServerUrl :: ServerURL
   , develMode :: Boolean
   , network :: String
-  , aboutMarkdown :: String
   }
 
 decodeConfig :: JsonParser Config
@@ -46,12 +45,10 @@ decodeConfig json = do
   marloweWebServerUrl <- obj .: "marloweWebServerUrl"
   develMode <- obj .: "develMode"
   network <- obj .: "network"
-  aboutMarkdown <- obj .: "aboutMarkdown"
   pure
     { marloweWebServerUrl: ServerURL marloweWebServerUrl
     , develMode
     , network
-    , aboutMarkdown
     }
 
 main :: Json -> Effect Unit
@@ -103,7 +100,7 @@ main configJson = do
             , contractStream
             , msgHub
             , runtime
-            , aboutMarkdown: config.aboutMarkdown
+            , aboutMarkdown: "placeholder"
             , slotting
             }
 

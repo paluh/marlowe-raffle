@@ -12,6 +12,7 @@ import Component.ContractDetails as ContractDetails
 import Component.SplittedDeposit.CreateContract as SplittedDeposit.CreateContract
 import Component.Types (MessageHub(..), MkComponentM)
 import Component.UseWithdrawal.Blockfrost as B
+import Contrib.Cardano (isLovelaceOnly)
 import Contrib.Cardano as C
 import Contrib.Cardano.CML as C.CML
 import Contrib.Fetch (fetchEither)
@@ -63,6 +64,7 @@ getCollateralUTxOs :: CML.Lib -> C.Lovelace -> Wallet.Api -> Aff (Maybe (Array A
 getCollateralUTxOs cardanoMultiplatformLib lovelace@(C.Lovelace lovelaceValue) wallet = do
   let
     utxoLovelace (AnUTxO { txOut: TxOut { value } }) = C.selectLovelace value
+    isLovelaceOnly (AnUTxO { txOut: TxOut { value } }) = C.isLovelaceOnly value
     tryWallet = do
       coinCborHex <- liftEffect $ runGarbageCollector cardanoMultiplatformLib do
         coinCbor <- CML.toCoinCbor lovelaceValue
@@ -81,7 +83,11 @@ getCollateralUTxOs cardanoMultiplatformLib lovelace@(C.Lovelace lovelaceValue) w
         Array.filter check <$> for utxos \(utxo :: CborHex TransactionUnspentOutputObject) ->
           C.CML.transactionUnspentOutputCBorHexToUTxO utxo
 
-  unsorted <- tryWallet -- `catchError` \_ -> Just <$> fetchPureLovelaceUTxOs
+  unsorted <- do
+    utxos <- tryWallet `catchError` \_ -> pure (Just [])
+    if (utxos == Just [])
+      then Just <$> fetchPureLovelaceUTxOs
+      else pure utxos
   let
     step utxo accum@{ utxos, total } = do
       if total > lovelace
@@ -91,9 +97,7 @@ getCollateralUTxOs cardanoMultiplatformLib lovelace@(C.Lovelace lovelaceValue) w
             total' = total <> utxoLovelace utxo
           { utxos: Array.cons utxo utxos, total: total' }
     takeEnough = _.utxos <<< foldr step { utxos: [], total: mempty }
-    collaterals = takeEnough <<< Array.sortBy (compare `on` utxoLovelace) <$> unsorted
-  traceM "collaterals"
-  traceM collaterals
+    collaterals = takeEnough <<< Array.sortBy (compare `on` utxoLovelace) <<< Array.filter isLovelaceOnly <$> unsorted
   traceM $ foldMap utxoLovelace <$> collaterals
   pure collaterals
 

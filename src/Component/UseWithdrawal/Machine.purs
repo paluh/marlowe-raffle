@@ -23,6 +23,8 @@ import Control.Monad.Maybe.Trans (MaybeT(..), runMaybeT)
 import Data.Argonaut (class DecodeJson, class EncodeJson, Json, JsonDecodeError(..), decodeJson, (.:))
 import Data.Array (find)
 import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NonEmptyArray
 import Data.Bifunctor (lmap)
 import Data.BigInt.Argonaut as BigInt
 import Data.Either (Either(..), either, fromRight, hush, note)
@@ -34,6 +36,7 @@ import Data.Traversable (for)
 import Data.Variant (Variant)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Class.Console as Console
 import Effect.Exception as Effect
 import Foreign.Internal.Stringify (unsafeStringify)
 import Marlowe.Runtime.Web.Types (AnUTxO(..), DatumHash, TxId(..), TxOut(..), TxOutRef(..))
@@ -61,9 +64,9 @@ derive newtype instance DecodeJson PayoutUTxO
 
 payoutReferenceInputForNetwork :: B.Network -> Maybe PayoutReferenceScriptTxOutRef
 payoutReferenceInputForNetwork network
-  | network == B.mainnet = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "672399f7d551d6e06fda70769f830e4e3783495c6250567c6ae97ecc788ad5a4", txIx: 2 }
-  | network == B.preprod = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "9a8a6f387a3330b4141e1cb019380b9ac5c72151c0abc52aa4266245d3c555cd", txIx: 2 }
-  | network == B.preview = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "69bfdb7cd911e930bfa073a8c45121e7690939d7680196181731d0dd609ecb73", txIx: 2 }
+  | network == B.mainnet = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "074fc62f0eb2571ff816d2d76d3f6824bec0bb9f3c040a61942f3a1a5a92bd7a", txIx: 2 }
+  | network == B.preprod = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "c59678b6892ba0fbeeaaec22d4cbde17026ff614ed47cea02c47752e5853ebc8", txIx: 2 }
+  | network == B.preview = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "07ee392718487daeeb6b972e6813f527530eaf7184a31b001d8072a5ae76915d", txIx: 2 }
   | true = Nothing
 
 type ExecutionCtxBase r =
@@ -95,8 +98,7 @@ data SubmittingTxError
   | BlockfrostSubmitTxError { msg :: String, info :: Json }
 
 data State
-  = AwaitingTrigger
-  | Initializing
+  = Initializing
       (ExecutionCtxBase (txOutRef :: TxOutRef))
       (Maybe String)
   | FetchingPayoutUTxO
@@ -105,14 +107,16 @@ data State
   | FindingRoleTokenUTxO
       (ExecutionCtx (payoutUTxO :: PayoutUTxO))
       (Maybe String)
+  | PayoutUTxOStatusChecking
+      (ExecutionCtx (payoutUTxO :: PayoutUTxO, roleTokenUTxO :: AnUTxO))
+      (Maybe PayoutUTxOStatusCheckingError)
+  | AwaitingWithdrawalTrigger
+      (ExecutionCtx (payoutUTxO :: PayoutUTxO, roleTokenUTxO :: AnUTxO))
   | GrabbingCollateralUTxOs
       (ExecutionCtx (payoutUTxO :: PayoutUTxO, roleTokenUTxO :: AnUTxO))
       (Maybe String)
-  | PayoutUTxOStatusChecking
-      (ExecutionCtx (payoutUTxO :: PayoutUTxO, roleTokenUTxO :: AnUTxO, collateralUTxOs :: Array AnUTxO))
-      (Maybe PayoutUTxOStatusCheckingError)
   | BuildingTx
-      (ExecutionCtx (payoutUTxO :: PayoutUTxO, roleTokenUTxO :: AnUTxO, collateralUTxOs :: Array AnUTxO))
+      (ExecutionCtx (payoutUTxO :: PayoutUTxO, roleTokenUTxO :: AnUTxO, collateralUTxOs :: NonEmptyArray AnUTxO))
       (Maybe String)
   | SigningTx
       (ExecutionCtx (tx :: CborHex TransactionObject))
@@ -127,7 +131,7 @@ data State
     }
 
 data Action
-  = Trigger (ExecutionCtxBase (txOutRef :: TxOutRef))
+  = Trigger
   | InitializationError String
   | InitializationSuccess
       { walletContext :: WalletContext
@@ -137,9 +141,11 @@ data Action
   | FetchPayoutUTxOError String
   | FetchPayoutUTxOSuccess PayoutUTxO
   | FindRoleTokenUTxOError String
+  | FindRoleTokenUTxOSuccess AnUTxO
+  | WithdrawalTrigger
   | GrabCollateralUTxOs AnUTxO
   | GrabCollateralUTxOsError String
-  | GrabCollateralUTxOsSuccess (Array AnUTxO)
+  | GrabCollateralUTxOsSuccess (NonEmptyArray AnUTxO)
   | PayoutUTxOStatusCheckError PayoutUTxOStatusCheckingError
   | PayoutUTxOStatusCheckSuccess
   | BuildTxError String
@@ -172,7 +178,7 @@ delete'
 delete' = Record.delete (Proxy :: Proxy l)
 
 step :: MooreMachineStep State Action
-step AwaitingTrigger (Trigger ctx) = Initializing ctx Nothing
+step (Initializing ctx _) Trigger = Initializing ctx Nothing
 step (Initializing ctx _) (InitializationError err) = Initializing ctx (Just err)
 step (Initializing ctx _) (InitializationSuccess { cml, walletContext, payoutReferenceInput }) = do
   let
@@ -190,16 +196,18 @@ step (FetchingPayoutUTxO ctx _) (FetchPayoutUTxOSuccess payoutUTxO) = do
   FindingRoleTokenUTxO ctx' Nothing
 step (FindingRoleTokenUTxO ctx _) (FindRoleTokenUTxOError err) =
   FindingRoleTokenUTxO ctx (Just err)
-step (FindingRoleTokenUTxO ctx _) (GrabCollateralUTxOs roleTokenUTxO) =
-  GrabbingCollateralUTxOs (insert' @"roleTokenUTxO" roleTokenUTxO ctx) Nothing
-step (GrabbingCollateralUTxOs ctx _) (GrabCollateralUTxOsError err) =
-  GrabbingCollateralUTxOs ctx (Just err)
-step (GrabbingCollateralUTxOs ctx _) (GrabCollateralUTxOsSuccess collateralUTxOs) =
-  PayoutUTxOStatusChecking (insert' @"collateralUTxOs" collateralUTxOs ctx) Nothing
+step (FindingRoleTokenUTxO ctx _) (FindRoleTokenUTxOSuccess roleTokenUTxO) =
+  PayoutUTxOStatusChecking (insert' @"roleTokenUTxO" roleTokenUTxO ctx) Nothing
 step (PayoutUTxOStatusChecking ctx _) (PayoutUTxOStatusCheckError err) =
   PayoutUTxOStatusChecking ctx (Just err)
 step (PayoutUTxOStatusChecking ctx _) PayoutUTxOStatusCheckSuccess =
-  BuildingTx ctx Nothing
+  AwaitingWithdrawalTrigger ctx
+step (AwaitingWithdrawalTrigger ctx) WithdrawalTrigger =
+  GrabbingCollateralUTxOs ctx Nothing
+step (GrabbingCollateralUTxOs ctx _) (GrabCollateralUTxOsError err) =
+  GrabbingCollateralUTxOs ctx (Just err)
+step (GrabbingCollateralUTxOs ctx _) (GrabCollateralUTxOsSuccess collateralUTxOs) =
+  BuildingTx (insert' @"collateralUTxOs" collateralUTxOs ctx) Nothing
 step (BuildingTx ctx _) (BuildTxError err) =
   BuildingTx ctx (Just err)
 step (BuildingTx ctx _) (BuildTxSuccess tx) = do
@@ -226,7 +234,6 @@ step (SubmittingTx ctx _) (SubmittingTxError err) =
 step (SubmittingTx _ _) (SubmittingTxSuccess txId) =
   TxCreated $ txId
 step _ (DriverFailed failureCtx) = DriverFailure failureCtx
-step _ (Trigger ctx) = Initializing ctx Nothing
 step state _ = state
 
 runExceptT' :: forall m b e a. Monad m => (e -> b) -> (a -> b) -> ExceptT e m a -> m b
@@ -240,7 +247,6 @@ driver state = do
       pure $ DriverFailed { state, error }
 
 actualDriver :: MooreMachineDriver State Action
-actualDriver AwaitingTrigger = Nothing
 actualDriver (Initializing ctx Nothing) = Just do
   possibleCml <- CML.importLib
   case possibleCml of
@@ -267,7 +273,7 @@ actualDriver (FindingRoleTokenUTxO ctx Nothing) = Just do
       roleToken
   selectRoleTokenTxOutRef ctx.cml roleTokenInfo ctx.wallet >>= case _ of
     Nothing -> pure $ FindRoleTokenUTxOError $ "Role token not found" <> show roleTokenInfo
-    Just utxo -> pure $ GrabCollateralUTxOs utxo
+    Just utxo -> pure $ FindRoleTokenUTxOSuccess utxo
 actualDriver (GrabbingCollateralUTxOs ctx Nothing) = Just do
   let
     twoAdaInLovelace :: C.Lovelace
@@ -282,7 +288,7 @@ actualDriver (GrabbingCollateralUTxOs ctx Nothing) = Just do
     -- eightAdaInLovelace = case C.Lovelace <$> BigInt.fromString "8000000" of
     --   Just l -> l
     --   Nothing -> unsafeCrashWith "eightAdaInLovelace"
-  C.Wallet.getCollateralUTxOs ctx.cml twoAdaInLovelace ctx.wallet >>= case _ of
+  C.Wallet.getCollateralUTxOs ctx.cml twoAdaInLovelace ctx.wallet >>= (_ >>= NonEmptyArray.fromArray) >>> case _ of
     Nothing -> pure $ GrabCollateralUTxOsError "Collateral UTxOs not found"
     Just utxos -> pure $ GrabCollateralUTxOsSuccess utxos
 actualDriver (PayoutUTxOStatusChecking ctx Nothing) =
@@ -355,7 +361,11 @@ actualDriver (SubmittingTx ctx Nothing) = Just do
         txIdCborHex <- withExceptT fromWalletError $ ExceptT $ Wallet.submitTx wallet tx
         pure $ C.CML.txIdFromCborHex txIdCborHex
         -- ExceptT $ map (lmap unsafeStringify) $ Wallet.submitTx wallet tx'
-    submitThroughWallet
+    submitThroughWallet `catchError` \err -> do
+      Console.error "wallet submission failed:"
+      Console.error $ unsafeStringify err
+      Console.error "trying blockfrost submission..."
+      submitThroughBlockfrost
 
 actualDriver (TxCreated _) = Nothing
 -- All the cases with errors
@@ -373,7 +383,7 @@ type RoleTokenInfo =
 fetchPayoutUTxO :: CML.Lib -> TxOutRef -> B.ProjectId -> B.Network -> Aff (Maybe PayoutUTxO)
 fetchPayoutUTxO cml txOutRef projectId network = runMaybeT do
   let
-    TxOutRef { txId, txIx } = txOutRef
+    TxOutRef { txId } = txOutRef
   { outputs: utxos } <- hushT $ B.fetchTxUTxOs cml projectId network txId
   datumHash <- MaybeT $ pure $ hush $ parsePayoutDatumHash (PayoutTxOutRef txOutRef) utxos
   datumJson <- MaybeT $ B.fetchDatum projectId network datumHash

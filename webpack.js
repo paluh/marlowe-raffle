@@ -9,6 +9,7 @@ import RemarkHTML from 'remark-html';
 
 export default function(_env, argv) {
   return {
+    mode: 'development',
     experiments: {
       asyncWebAssembly: true
     },
@@ -34,24 +35,11 @@ export default function(_env, argv) {
     resolve: {
       modules: ['node_modules'],
     },
+    stats: {
+      loggingDebug: ['sass-loader'],
+    },
     module: {
       rules: [
-        {
-          test: /\.md$/,
-          use: [
-            {
-              loader: "html-loader",
-            },
-            {
-              loader: "remark-loader",
-              options: {
-                remarkOptions: {
-                  plugins: [RemarkHTML],
-                },
-              },
-            },
-          ],
-        },
         {
           test: /\.(scss|css)$/,
           use: [
