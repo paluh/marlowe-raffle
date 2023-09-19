@@ -67,6 +67,10 @@ payoutReferenceInputForNetwork network
   | network == B.mainnet = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "074fc62f0eb2571ff816d2d76d3f6824bec0bb9f3c040a61942f3a1a5a92bd7a", txIx: 2 }
   | network == B.preprod = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "c59678b6892ba0fbeeaaec22d4cbde17026ff614ed47cea02c47752e5853ebc8", txIx: 2 }
   | network == B.preview = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "07ee392718487daeeb6b972e6813f527530eaf7184a31b001d8072a5ae76915d", txIx: 2 }
+  -- New
+  -- | network == B.mainnet = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "672399f7d551d6e06fda70769f830e4e3783495c6250567c6ae97ecc788ad5a4", txIx: 2 }
+  -- | network == B.preprod = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "9a8a6f387a3330b4141e1cb019380b9ac5c72151c0abc52aa4266245d3c555cd", txIx: 2 }
+  -- | network == B.preview = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "69bfdb7cd911e930bfa073a8c45121e7690939d7680196181731d0dd609ecb73", txIx: 2 }
   | true = Nothing
 
 type ExecutionCtxBase r =

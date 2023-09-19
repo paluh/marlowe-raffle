@@ -140,7 +140,7 @@ mkWithdrawalWidget = do
           -- { txId: Runtime.TxId "c93175feff92ddfb571f4d12b9d34ab910594dce54ad4017a5670a0b43a930f5"
           -- , txIx: 0
           -- }
-          { txId: Runtime.TxId "e9e4df445a407ec361bed3f1d281a2bde816243b84fb3c40c09bacc5a9aba107"
+          { txId: Runtime.TxId "eb88054fdcbfa39c61379ba288b192fdc7e7b0074b949407b18c05cc1e481a34"
           , txIx: 2
           }
         , blockfrostProjectId: B.ProjectId "preprodD9cONxVqzHYtFEL4RObOZ46y4begqNHc"

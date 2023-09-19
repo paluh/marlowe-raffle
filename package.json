@@ -1,6 +1,6 @@
 {
   "name": "marlowe-raffle",
-  "version": "v0.0.9",
+  "version": "v0.0.10",
   "type": "module",
   "main": "dist/marlowe-raffle.js",
   "files": [
