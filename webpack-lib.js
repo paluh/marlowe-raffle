@@ -16,7 +16,7 @@ export default function(_env, argv) {
     externals: {
       react: 'react',
       "react-dom": 'react-dom',
-      "@dcspark/cardano-multiplatform-lib-browser": "@dcspark/cardano-multiplatform-lib-browser",
+      // "@dcspark/cardano-multiplatform-lib-browser": "@dcspark/cardano-multiplatform-lib-browser",
     },
     experiments: {
       asyncWebAssembly: true,
@@ -32,10 +32,9 @@ export default function(_env, argv) {
       port: 8080
     },
     plugins: [
-      new webpack.NormalModuleReplacementPlugin(
-        /@dcspark\/cardano-multiplatform-lib-nodejs/,
-        '@dcspark/cardano-multiplatform-lib-browser'
-      ),
+      // new webpack.NormalModuleReplacementPlugin(
+      //   '@dcspark/cardano-multiplatform-lib-browser'
+      // ),
       new BundleAnalyzerPlugin(),
     ],
     output: {
