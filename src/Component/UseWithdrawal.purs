@@ -177,7 +177,7 @@ machineStateToHookStatus trigger = case _ of
     , msg: "An unhandled exception during execution with internal state: " <> unsafeStringify state
     }
 
-useWithdrawal :: Props -> Hook UseWithdrawal { status :: TsHookStatus, reset :: Props -> Effect Unit }
+useWithdrawal :: Props -> Hook UseWithdrawal { status :: HookStatus, reset :: Props -> Effect Unit }
 useWithdrawal ctx = React.coerceHook React.do
   let
     spec initialCtx =
@@ -200,11 +200,10 @@ useWithdrawal ctx = React.coerceHook React.do
 
   pure
     { status: do
-        let
-          status = machineStateToHookStatus
+        machineStateToHookStatus
             (applyAction M.WithdrawalTrigger)
             state
-        encodeTsHookStatus status
+        -- encodeTsHookStatus status
     , reset: reset'
     }
 

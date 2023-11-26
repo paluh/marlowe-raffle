@@ -75,6 +75,9 @@ type MkContextBase r =
   , msgHub :: MessageHub
   , aboutMarkdown :: String
   , slotting :: Slotting
+  , appCtx :: ReactContext
+    { isDesktop :: Boolean
+    }
   | r
   }
 

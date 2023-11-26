@@ -91,10 +91,12 @@ main configJson = do
       Nothing -> liftEffect $ logger "Cardano serialization lib loading failed"
       Just cardanoMultiplatformLib -> do
         walletInfoCtx <- liftEffect $ createContext Nothing
+        appCtx <- liftEffect $ createContext { isDesktop: true }
         msgHubComponent /\ msgHub <- liftEffect $ mkMessageHub
         let
           mkAppCtx =
             { cardanoMultiplatformLib
+            , appCtx
             , walletInfoCtx
             , logger
             , contractStream
@@ -106,3 +108,4 @@ main configJson = do
 
         app <- liftEffect $ runReaderT mkApp mkAppCtx
         liftEffect $ renderRoot reactRoot $ msgHubComponent [ app unit ]
+

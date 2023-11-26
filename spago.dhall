@@ -82,6 +82,7 @@
   , "safe-coerce"
   , "simple-csv"
   , "strings"
+  , "strings-extra"
   , "tailrec"
   , "transformers"
   , "tuples"
