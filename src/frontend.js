@@ -2,7 +2,7 @@
 
 'use strict';
 
-import { main } from "../output/Main/index.js";
+import { main } from "../output-es/Main/index.js";
 import domready from 'domready';
 import "../public/style.scss";
 import 'reactflow/dist/style.css'

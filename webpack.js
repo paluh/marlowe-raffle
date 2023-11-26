@@ -9,14 +9,13 @@ import RemarkHTML from 'remark-html';
 
 export default function(_env, argv) {
   return {
-    mode: 'development',
+    mode: 'production',
     experiments: {
       asyncWebAssembly: true
     },
     entry: {
        app: './src/frontend.js',
     },
-    devtool: 'inline-source-map',
     devServer: {
       static: './public',
       hot: true,
