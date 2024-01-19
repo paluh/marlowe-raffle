@@ -78,8 +78,9 @@ mkSelectWallet = do
           gerowallet <- liftEffect (Wallet.gerowallet cardano) >>= traverse walletInfo
           lace <- liftEffect (Wallet.lace cardano) >>= traverse walletInfo
           nami <- liftEffect (Wallet.nami cardano) >>= traverse walletInfo
+          typhon <- liftEffect (Wallet.typhon cardano) >>= traverse walletInfo
           yoroi <- liftEffect (Wallet.yoroi cardano) >>= traverse walletInfo
-          case ArrayAL.fromArray (Proxy :: Proxy 1) (Array.catMaybes [ eternl, gerowallet, lace, nami, yoroi ]) of
+          case ArrayAL.fromArray (Proxy :: Proxy 1) (Array.catMaybes [ eternl, gerowallet, lace, nami, typhon, yoroi ]) of
             Nothing -> liftEffect $ onWalletConnect NoWallets
             Just wallets -> liftEffect $ do
               setWallets (Just wallets)

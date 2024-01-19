@@ -12,31 +12,23 @@ import Component.CNCAla.SocialMedia (socialMedia)
 import Component.ConnectWallet (mkConnectWallet, walletInfo)
 import Component.ContractList (mkContractList)
 import Component.InputHelper (addressesInContract, rolesInContract)
-import Component.MessageHub (mkMessageBox, mkMessagePreview)
+import Component.MessageHub (mkMessageBox)
 import Component.SelectWallet (Response(..), mkSelectWallet)
-import Component.Types (ContractInfo(..), MessageContent(Info), MessageHub(MessageHub), MkComponentMBase, WalletInfo(..))
+import Component.Types (ContractInfo(..), MkComponentMBase, WalletInfo(..))
 import Component.Types.AppTags as AppTags
 import Component.Types.ContractInfo (MarloweInfo(..))
-import Component.UseWithdrawal (HookStatus(..), useWithdrawal)
+import Component.UseWithdrawal (HookStatus(..), HookError, useWithdrawal)
 import Component.UseWithdrawal.Blockfrost as B
 import Contrib.CNCAla.Animation.EaseInWithSlidingAnimation (easeInWithSlidingAnimation)
 import Contrib.Cardano as C
 import Contrib.ChakraUI (chakraProvider, useColorModeValue)
 import Contrib.ChakraUI as Chakra
-import Contrib.Data.Map (New(..), Old(..), additions, deletions) as Map
-import Contrib.Halogen.Subscription (MinInterval(..))
-import Contrib.Halogen.Subscription (bindEffect, foldMapThrottle) as Subscription
-import Contrib.ReactSyntaxHighlighter (yamlSyntaxHighlighter)
 import Control.Monad.Error.Class (catchError)
 import Control.Monad.Reader.Class (asks)
-import Data.Argonaut (Json)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Foldable (length)
-import Data.List (List)
-import Data.List as List
 import Data.Map (Map)
-import Data.Map (catMaybes, empty, lookup) as Map
+import Data.Map (catMaybes, lookup) as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (un)
 import Data.Newtype as Newtype
@@ -45,26 +37,23 @@ import Data.Traversable (for, traverse)
 import Data.Tuple.Nested ((/\))
 import Debug (traceM)
 import Effect (Effect)
-import Effect.Aff (Aff, error, killFiber, launchAff, launchAff_)
+import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Effect.Now (now)
-import Halogen.Subscription (Emitter) as Subscription
+import Foreign.Internal.Stringify (unsafeStringify)
 import Language.Marlowe.Core.V1.Semantics (emptyState) as V1
-import Marlowe.Runtime.Web.Streaming (ContractWithTransactionsEvent, ContractWithTransactionsMap, ContractWithTransactionsStream(..))
+import Marlowe.Runtime.Web.Streaming (ContractWithTransactionsMap, ContractWithTransactionsStream(..))
 import Marlowe.Runtime.Web.Types (PolicyId(..), TxId(..))
 import Marlowe.Runtime.Web.Types as Runtime
 import React.Basic (JSX)
 import React.Basic.DOM (img, text) as DOOM
-import React.Basic.DOM.Simplified.Generated as DOM
-import React.Basic.Events (EventHandler, handler, handler_)
-import React.Basic.Hooks (component, readRef, useContext, useEffect, useEffectOnce, useState')
+import React.Basic.Events (EventHandler, handler_)
+import React.Basic.Hooks (component, readRef, useContext, useState')
 import React.Basic.Hooks as React
 import React.Basic.Hooks.Aff (useAff)
 import Record as Record
 import Type.Prelude (Proxy(..))
-import Unsafe.Coerce (unsafeCoerce)
-import Utils.React.Basic.Hooks (useEmitter', useLoopAff, useStateRef, useStateRef')
+import Utils.React.Basic.Hooks (useLoopAff, useStateRef, useStateRef')
 import Wallet as Wallet
 import WalletContext (WalletContext(..))
 import WalletContext as WalletContext
@@ -124,75 +113,23 @@ newtype AppContractInfoMap = AppContractInfoMap
 policyIdsStr :: C.Value -> Array String
 policyIdsStr = map C.assetIdToString <<< C.valueAssetIds
 
-mkWithdrawalWidget :: MkComponentMBase () (WalletInfo Wallet.Api -> JSX)
-mkWithdrawalWidget = do
-  traceM "V.10"
-  liftEffect $ component "WithdrawalWidget" \(WalletInfo walletInfo) -> React.do
-    let
-      withdrawalProps =
-        { wallet: walletInfo.wallet
-        , network: B.preprod
-        , txOutRef: Runtime.TxOutRef
-            -- { txId: Runtime.TxId "c93175feff92ddfb571f4d12b9d34ab910594dce54ad4017a5670a0b43a930f5"
-            -- , txIx: 0
-            -- }
-            { txId: Runtime.TxId "eb88054fdcbfa39c61379ba288b192fdc7e7b0074b949407b18c05cc1e481a34"
-            , txIx: 2
-            }
-        , blockfrostProjectId: B.ProjectId "preprodD9cONxVqzHYtFEL4RObOZ46y4begqNHc"
-        }
-    { status: withdrawalStatus, reset } <- useWithdrawal withdrawalProps
-
-    pure $ do
-      let
-        { status } = unsafeCoerce withdrawalStatus
-      case status of
-        "AwaitingWithdrawalTrigger" -> do
-          let
-            { trigger } = unsafeCoerce withdrawalStatus
-          DOM.div {}
-            [ DOM.button
-                { className: "btn btn-primary"
-                , onClick: handler_ trigger
-                }
-                [ DOOM.text "Withdraw" ]
-            ]
-        "WithdrawalFailed" -> do
-          let
-            { error: json :: Json } = unsafeCoerce withdrawalStatus
-          yamlSyntaxHighlighter json {}
-        _ -> do
-          -- | Let's dispaly a button which triggers withdrawal
-          -- | and a status message.
-          let
-            (json :: Json) = unsafeCoerce withdrawalStatus
-          yamlSyntaxHighlighter json {}
-
 mkApp :: MkComponentMBase () (Unit -> JSX)
 mkApp = do
   selectWallet <- mkSelectWallet
   messageBox <- liftEffect $ mkMessageBox
-  messagePreview <- liftEffect $ mkMessagePreview
   cardanoMultiplatformLib <- asks _.cardanoMultiplatformLib
   subcomponents <- do
     contractListComponent <- mkContractList
     -- eventListComponent <- mkEventList
     connectWallet <- mkConnectWallet
     splittedDeposit <- mkSplittedDeposit
-    withdrawalWidget <- mkWithdrawalWidget
-    pure { contractListComponent, connectWallet, messageBox, splittedDeposit, withdrawalWidget }
+    -- withdrawalWidget <- mkWithdrawalWidget
+    pure { contractListComponent, connectWallet, messageBox, splittedDeposit } --, withdrawalWidget }
 
   (ContractWithTransactionsStream contractStream) <- asks _.contractStream
 
-  throttledEmitter :: Subscription.Emitter (List ContractWithTransactionsEvent) <- liftEffect $
-    Subscription.foldMapThrottle (List.singleton) (MinInterval $ Milliseconds 1_000.0) contractStream.emitter
-
-  initialVersion <- liftEffect now
-
   appCtxCtx <- asks _.appCtx
-
-  walletInfoCtx <- asks _.walletInfoCtx
-  msgHub@(MessageHub msgHubProps) <- asks _.msgHub
+  -- walletInfoCtx <- asks _.walletInfoCtx
 
   raffleModal <- mkRaffleModal
 
@@ -207,10 +144,10 @@ mkApp = do
     possibleWalletContext /\ setWalletContext <- useState' Nothing
     possibleWalletContextRef <- useStateRef' possibleWalletContext
 
-    useEffectOnce do
-      -- FIXME: We should restart fetchers on exception
-      fiber <- launchAff $ contractStream.start
-      pure $ launchAff_ $ killFiber (error "Unmounting component") fiber
+    -- useEffectOnce do
+    --   -- FIXME: We should restart fetchers on exception
+    --   fiber <- launchAff $ contractStream.start
+    --   pure $ launchAff_ $ killFiber (error "Unmounting component") fiber
 
     useLoopAff walletInfoName (Milliseconds 20_000.0) do
       pwi <- liftEffect $ readRef possibleWalletInfoRef
@@ -233,37 +170,37 @@ mkApp = do
     -- checkingNotifications /\ setCheckingNotifications <- useState' false
 
     -- We are ignoring contract events for now and we update the whole contractInfo set.
-    upstreamVersion <- useEmitter' initialVersion (Subscription.bindEffect (const now) throttledEmitter)
-    upstreamVersionRef <- useStateRef' upstreamVersion
+    -- upstreamVersion <- useEmitter' initialVersion (Subscription.bindEffect (const now) throttledEmitter)
+    -- upstreamVersionRef <- useStateRef' upstreamVersion
 
-    -- Let's use versioning so we avoid large comparison.
-    (version /\ contractMap) /\ setContractMap <- useState' (upstreamVersion /\ AppContractInfoMap { walletContext: possibleWalletContext, map: Map.empty })
-    idRef <- useStateRef version contractMap
+    -- -- Let's use versioning so we avoid large comparison.
+    -- (version /\ contractMap) /\ setContractMap <- useState' (upstreamVersion /\ AppContractInfoMap { walletContext: possibleWalletContext, map: Map.empty })
+    -- idRef <- useStateRef version contractMap
 
-    useEffect (upstreamVersion /\ possibleWalletContext) do
-      updates <- contractStream.getLiveState
-      old <- readRef idRef
-      newVersion <- readRef upstreamVersionRef
-      let
-        new = updateAppContractInfoMap old possibleWalletContext updates
-        _map (AppContractInfoMap { map }) = map
+    -- useEffect (upstreamVersion /\ possibleWalletContext) do
+    --   updates <- contractStream.getLiveState
+    --   old <- readRef idRef
+    --   newVersion <- readRef upstreamVersionRef
+    --   let
+    --     new = updateAppContractInfoMap old possibleWalletContext updates
+    --     _map (AppContractInfoMap { map }) = map
 
-        old' = _map old
-        new' = _map new
+    --     old' = _map old
+    --     new' = _map new
 
-        (additionsNumber :: Int) = length $ Map.additions (Map.Old old') (Map.New new')
-        (deletionsNumber :: Int) = length $ Map.deletions (Map.Old old') (Map.New new')
+    --     (additionsNumber :: Int) = length $ Map.additions (Map.Old old') (Map.New new')
+    --     (deletionsNumber :: Int) = length $ Map.deletions (Map.Old old') (Map.New new')
 
-      when (deletionsNumber > 0 || additionsNumber > 0) do
-        msgHubProps.add $ Info $ DOOM.text $
-          "Update: "
-            <> (if deletionsNumber == 0 then "" else show deletionsNumber <> " contracts removed")
-            <> (if deletionsNumber > 0 && additionsNumber > 0 then ", " else "")
-            <> (if additionsNumber == 0 then "" else show additionsNumber <> " contracts discovered")
-            <> "."
+    --   when (deletionsNumber > 0 || additionsNumber > 0) do
+    --     msgHubProps.add $ Info $ DOOM.text $
+    --       "Update: "
+    --         <> (if deletionsNumber == 0 then "" else show deletionsNumber <> " contracts removed")
+    --         <> (if deletionsNumber > 0 && additionsNumber > 0 then ", " else "")
+    --         <> (if additionsNumber == 0 then "" else show additionsNumber <> " contracts discovered")
+    --         <> "."
 
-      setContractMap (newVersion /\ new)
-      pure $ pure unit
+    --   setContractMap (newVersion /\ new)
+    --   pure $ pure unit
 
     -- -- This causes a lot of re renders - we avoid it for now by
     -- -- enforcing manual offcanvas toggling.
@@ -274,12 +211,12 @@ mkApp = do
     --   when (List.null msgs) do
     --     setCheckingNotifications false
     --   pure $ pure unit
-
+    -- let
+    --   AppContractInfoMap { map: contracts } = contractMap
     useAff unit $ for debugWallet \walletBrand ->
       autoConnectWallet walletBrand \walletInfo -> do
         liftEffect $ setWalletInfo $ Just walletInfo
-    let
-      AppContractInfoMap { map: contracts } = contractMap
+
     pure $ chakraProvider { theme: Chakra.theme, cssVarsRoot: "body" } $ Array.singleton
       $ Chakra.container { alignSelf: "center", w: "100%" }
       $ Array.singleton
@@ -420,261 +357,224 @@ updateAppContractInfoMap (AppContractInfoMap { map: prev }) walletContext update
         _, _, _ -> Nothing
   AppContractInfoMap { walletContext, map }
 
---  const getModalContent = () => {
---    switch (status.status) {
---      case "Initializing":
---        return (
---          <Stack py="14">
---            <CNCSpinner />
---            <Text textAlign="center" animation={animation}>
---              {"Looking for winner NFT"}
---            </Text>
---          </Stack>
---        );
---      case "ProcessingWithdrawal":
---        return (
---          <Stack py="14">
---            <CNCSpinner />
---            <Text textAlign="center" animation={animation}>
---              {"Processing transaction"}
---            </Text>
---          </Stack>
---        );
---      case "InitializationFailed":
---        return (
---          <>
---            <Heading
---              as="h3"
---              fontSize={"3xl"}
---              textAlign="center"
---              size={"sm"}
---            >
---              {"Better luck next time!"}
---            </Heading>
---            <Text textAlign="justify">
---              {
---                "Unfortunately, we couldn't find any winner NFT in your wallet. Thank you so much for participating and for helping us boost our impact in Madagascar!"
---              }
---            </Text>
---            <Link href="/">
---              <Button
---                w="2xs"
---                bgColor="olivedrab"
---                borderRadius="20px"
---                _hover={{
---                  bgColor: "green",
---                }}
---              >
---                {"Discover the CNC Ala"}
---              </Button>
---            </Link>
---          </>
---        );
---      case "AwaitingWithdrawalTrigger":
---        return (
---          <>
---            <Heading
---              as="h3"
---              fontSize={"3xl"}
---              textAlign="center"
---              size={"sm"}
---            >
---              {"Congratulations, lucky winner!"}
---            </Heading>
---            <Text textAlign="justify">
---              {
---                "Your prize is a few clicks away. Thank you so much for participating and for helping us boost our impact in Madagascar!"
---              }
---            </Text>
---            <Button
---              w="2xs"
---              bgColor="olivedrab"
---              borderRadius="20px"
---              onClick={status.trigger!}
---              _hover={{
---                bgColor: "green",
---              }}
---            >
---              {"Claim Prize"}
---            </Button>
---          </>
---        );
---      case "WithdrawalFailed":
---        return (
---          <>
---            <Heading
---              as="h3"
---              fontSize={"3xl"}
---              textAlign="center"
---              size={"sm"}
---            >
---              {"Something went wrong 💥"}
---            </Heading>
---            <Text textAlign="justify">
---              {
---                "Please try again or get in touch with the members of CNC on Twitter or Discord."
---              }
---            </Text>
---          </>
---        );
---      case "WithdrawalSucceeded":
---        return (
---          <>
---            <Stack align="center" spacing={6}>
---              <Heading
---                as="h3"
---                fontSize={"3xl"}
---                textAlign="center"
---                size={"sm"}
---              >
---                {"Success! 🌳"}
---              </Heading>
---              <Text textAlign="justify">
---                {
---                  "You should see your prize on your wallet soon. You can check the transaction here:"
---                }
---              </Text>
---              <Link
---                href={`https://${hookProps.network}.cardanoscan.io/transaction/${status.txId}`}
---                target="_blank"
---              >
---                <Text textAlign="justify">{status.txId}</Text>
---              </Link>
---            </Stack>
---          </>
---        );
---    }
---  };
+data Prize
+  = FirstPrize
+  | SecondPrize
+  | ThirdPrize
 
--- Let's translate the above to PureScript. Please not that in our case we have just well typed status:
--- data HookStatus
---   = Initializing String
---   | InitializationFailed HookError
---   | AwaitingWithdrawalTrigger (Effect Unit)
---   | ProcessingWithdrawal String
---   | WithdrawalFailed
---     { error :: HookError
---     , retry :: Effect Unit
---     }
---   | WithdrawalSucceeded TxId
---   | FatalError HookError
+type ModalContentProps =
+  { firstPrizeStatus :: HookStatus
+  , secondPrizeStatus :: HookStatus
+  , thirdPrizeStatus :: HookStatus
+  }
 
+data StatusSummary
+  = Checking
+  | TotalLoser
+  | Winner
+    { prize :: Prize
+    , trigger :: Effect Unit
+    , status :: HookStatus
+    }
+  | Withdrawing
+    { prize :: Prize
+    , status :: HookStatus
+    }
+  | FinalWithdrawalFailed
+    { prize :: Prize
+    , error :: HookError
+    }
+  | FinalWithdrawalSucceeded
+    { prize :: Prize
+    , txId :: TxId
+    }
+  | Failure
+    { failure :: HookStatus
+    }
 
---	const animationKeyframes = keyframes`
---	0% { opacity: 0; }
---	50% { opacity: 1; }
---	100% { opacity: 0; }
---`;
---	const animation = `${animationKeyframes} 2.5s ease-in-out infinite`;
---
--- Let's prettend that all the other context is at hand as well.
-getModalContent :: HookStatus -> JSX
-getModalContent status = do
+summarize :: ModalContentProps -> StatusSummary
+summarize props = case props.firstPrizeStatus, props.secondPrizeStatus, props.thirdPrizeStatus of
+  AwaitingWithdrawalTrigger trigger, _, _ -> Winner { prize: FirstPrize, trigger, status: props.firstPrizeStatus }
+  _, AwaitingWithdrawalTrigger trigger, _ -> Winner { prize: SecondPrize, trigger, status: props.secondPrizeStatus }
+  _, _, AwaitingWithdrawalTrigger trigger -> Winner { prize: ThirdPrize, trigger, status: props.thirdPrizeStatus }
+  ProcessingWithdrawal _, _, _ -> Withdrawing { prize: FirstPrize, status: props.firstPrizeStatus }
+  _, ProcessingWithdrawal _, _ -> Withdrawing { prize: SecondPrize, status: props.secondPrizeStatus }
+  _, _, ProcessingWithdrawal _ -> Withdrawing { prize: ThirdPrize, status: props.thirdPrizeStatus }
+  WithdrawalFailed failure, _, _ -> FinalWithdrawalFailed { prize: FirstPrize, error: failure.error }
+  _, WithdrawalFailed failure, _ -> FinalWithdrawalFailed { prize: SecondPrize, error: failure.error }
+  _, _, WithdrawalFailed failure -> FinalWithdrawalFailed { prize: ThirdPrize, error: failure.error }
+  WithdrawalSucceeded txId, _, _ -> FinalWithdrawalSucceeded { prize: FirstPrize, txId }
+  _, WithdrawalSucceeded txId, _ -> FinalWithdrawalSucceeded { prize: SecondPrize, txId }
+  _, _, WithdrawalSucceeded txId -> FinalWithdrawalSucceeded { prize: ThirdPrize, txId }
+  InitializationFailed _, InitializationFailed _, InitializationFailed _ -> TotalLoser
+  FatalError _, _, _ -> Failure { failure: props.firstPrizeStatus }
+  _, FatalError _, _ -> Failure { failure: props.secondPrizeStatus }
+  _, _, FatalError _ -> Failure { failure: props.thirdPrizeStatus }
+  _, _, _ -> Checking
+
+getModalContent :: ModalContentProps -> JSX
+getModalContent props = do
   let
     animationKeyframes = "keyframes{ 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }"
     animation = animationKeyframes <> " 2.5s ease-in-out infinite"
-  case status of
-    Initializing msg -> do
+    summary = summarize props
+
+  case summary of
+    Checking -> do
       Chakra.stack { py: "14" }
         [ cncSpinner {}
         , Chakra.text { textAlign: "center", animation }
-            [ DOOM.text msg ]
+            [ DOOM.text "Looking for a winner NFT in your wallet." ]
         ]
-    InitializationFailed error -> do
+    TotalLoser -> do
       Chakra.stack {}
         [ Chakra.heading { as: "h3", fontSize: "3xl", textAlign: "center", size: "sm" }
             [ DOOM.text "Better luck next time!" ]
         , Chakra.text { textAlign: "justify" }
             [ DOOM.text "Unfortunately, we couldn't find any winner NFT in your wallet. Thank you so much for participating and for helping us boost our impact in Madagascar!" ]
-        , Chakra.link { href: "/", _hover: { bgColor: "green" } }
+        , Chakra.link { alignSelf: "center", justifyContent: "center", href: "https://climateneutralcardano.org/", _hover: { bgColor: "green" } }
             [ Chakra.button
                 { w: "2xs"
+                , alignSelf: "center"
                 , bgColor: "olivedrab"
                 , borderRadius: "20px"
                 }
                 [ DOOM.text "Discover the CNC Ala" ]
             ]
         ]
-    AwaitingWithdrawalTrigger trigger -> do
+    Winner { prize, trigger } -> do
+      let
+        congratulations = case prize of
+          FirstPrize -> "Congratulations, lucky winner!"
+          SecondPrize -> "Congratulations, you won the second prize!"
+          ThirdPrize -> "Congratulations, you won the third prize!"
       Chakra.stack {}
         [ Chakra.heading { as: "h3", fontSize: "3xl", textAlign: "center", size: "sm" }
-            [ DOOM.text "Congratulations, lucky winner!" ]
+            [ DOOM.text congratulations ]
         , Chakra.text { textAlign: "justify" }
             [ DOOM.text "Your prize is a few clicks away. Thank you so much for participating and for helping us boost our impact in Madagascar!" ]
         , Chakra.button
             { w: "2xs"
+            , alignSelf: "center"
             , bgColor: "olivedrab"
             , borderRadius: "20px"
+            , justifySelf: "center"
             , onClick: handler_ trigger
             , _hover: { bgColor: "green" }
             }
             [ DOOM.text "Claim Prize" ]
         ]
-    ProcessingWithdrawal msg -> do
+    Withdrawing { prize } -> do
       Chakra.stack {}
         [ cncSpinner {}
-        , Chakra.text { textAlign: "center", animation: animation }
-            [ DOOM.text msg ]
+        , Chakra.text { textAlign: "center", animation }
+            [ DOOM.text $ "Processing " <> case prize of
+                FirstPrize -> "first"
+                SecondPrize -> "second"
+                ThirdPrize -> "third"
+                <> " prize withdrawal."
+            ]
         ]
-    WithdrawalFailed { error, retry } -> do
+    FinalWithdrawalFailed { error } -> do
       Chakra.stack {}
         [ Chakra.heading { as: "h3", fontSize: "3xl", textAlign: "center", size: "sm" }
-            [ DOOM.text "Something went wrong 💥" ]
+            [ DOOM.text "Something went wrong 💥"
+            , DOOM.text $ unsafeStringify error
+            ]
         , Chakra.text { textAlign: "justify" }
             [ DOOM.text "Please try again or get in touch with the members of CNC on Twitter or Discord." ]
         ]
-    WithdrawalSucceeded (TxId txId) -> do
+    FinalWithdrawalSucceeded { txId } -> do
       Chakra.stack { align: "center", spacing: "6" }
         [ Chakra.heading { as: "h3", fontSize: "3xl", textAlign: "center", size: "sm" }
             [ DOOM.text "Success! 🌳" ]
         , Chakra.text { textAlign: "justify" }
             [ DOOM.text "You should see your prize on your wallet soon. You can check the transaction here:" ]
-        , Chakra.link { href: "https://preprod.cardanoscan.io/transaction/" <> txId, target: "_blank" }
-            [ Chakra.text { textAlign: "justify" } [ DOOM.text txId ] ]
+        , do
+            let
+              TxId txIdStr = txId
+              href = if useMainnet == UseMainnet true
+                then "https://cardanoscan.io/transaction/" <> txIdStr
+                else "https://preprod.cardanoscan.io/transaction/" <> txIdStr
+
+            Chakra.link { href, target: "_blank" }
+              [ Chakra.text { textAlign: "justify" } [ DOOM.text txIdStr ] ]
         ]
-    FatalError _ -> do
+    Failure { failure } -> do
       Chakra.stack {}
         [ Chakra.heading { as: "h3", fontSize: "3xl", textAlign: "center", size: "sm" }
-            [ DOOM.text "Something went wrong 💥" ]
+            [ DOOM.text "Something went wrong 💥 and we were not able to even check if you won a prize."
+            , DOOM.text $ unsafeStringify failure
+            ]
         , Chakra.text { textAlign: "justify" }
             [ DOOM.text "Please try again or get in touch with the members of CNC on Twitter or Discord." ]
         ]
 
--- type Props =
---   { wallet :: Wallet.Api
---   , network :: Blockfrost.Network
---   , txOutRef :: TxOutRef
---   , blockfrostProjectId :: Blockfrost.ProjectId
---   }
+newtype UseMainnet = UseMainnet Boolean
+derive newtype instance Eq UseMainnet
+derive newtype instance Show UseMainnet
 
+useMainnet :: UseMainnet
+useMainnet = UseMainnet true
 
---     network: "preprod",
---     wallet: wallet,
---     txOutRef: {
---       txId: getTxId(),
---       txIx: 2,
---     },
---     blockfrostProjectId: "preprodD9cONxVqzHYtFEL4RObOZ46y4begqNHc",
 
 mkRaffleModal :: MkComponentMBase () ({ wallet :: WalletInfo Wallet.Api, isOpen :: Boolean, onClose :: EventHandler } -> JSX)
 mkRaffleModal = do
   appCtxCtx <- asks _.appCtx
+  traceM $ "useMainnet:" <> show useMainnet
   liftEffect $ component "App" \{ isOpen, onClose, wallet: WalletInfo walletInfo } -> React.do
     let
-      withdrawalProps =
-        { wallet: walletInfo.wallet
-        , network: B.preprod
-        , txOutRef: Runtime.TxOutRef
-            -- { txId: Runtime.TxId "c93175feff92ddfb571f4d12b9d34ab910594dce54ad4017a5670a0b43a930f5"
-            -- , txIx: 0
-            -- }
-            { txId: Runtime.TxId "eb88054fdcbfa39c61379ba288b192fdc7e7b0074b949407b18c05cc1e481a34"
-            , txIx: 2
-            }
-        , blockfrostProjectId: B.ProjectId "preprodD9cONxVqzHYtFEL4RObOZ46y4begqNHc"
-        }
+      withdrawalProps txOutRef = if useMainnet == UseMainnet true
+        then
+          { wallet: walletInfo.wallet
+          , network: B.mainnet
+          , txOutRef
+          , blockfrostProjectId: B.ProjectId "mainnetw05PaBKTzXiuXujWPlKJHo9Jvvk5SmyL"
+          }
+        else
+          { wallet: walletInfo.wallet
+          , network: B.preprod
+          , txOutRef
+          , blockfrostProjectId: B.ProjectId "preprodD9cONxVqzHYtFEL4RObOZ46y4begqNHc"
+          }
 
-    { status, reset } <- useWithdrawal withdrawalProps
+      { firstPrizeWithdrawalProps, secondPrizeWithdrawalProps, thirdPrizeWithdrawalProps } = if useMainnet == UseMainnet true
+        then
+          { firstPrizeWithdrawalProps: withdrawalProps $ Runtime.TxOutRef
+              { txId: Runtime.TxId "8d239e97fa5b7e8cee00d7f160aa4f51adaef17386f883de4d3d9e391bbf7bfc"
+              , txIx: 1
+              }
+          , secondPrizeWithdrawalProps: withdrawalProps $ Runtime.TxOutRef
+              { txId: Runtime.TxId "6c01c234aa14bf292c41875c0437cc8657b13570b1b349b64578fd0a212710ab"
+              , txIx: 1
+              }
+          , thirdPrizeWithdrawalProps: withdrawalProps $ Runtime.TxOutRef
+              { txId: Runtime.TxId "143fe58ddd63197f7a7b1f48d6c2a616ce8955873c9c633ea0d39b8a81fef97f"
+              , txIx: 1
+              }
+          }
+        else
+          { firstPrizeWithdrawalProps: withdrawalProps $ Runtime.TxOutRef
+              { txId: Runtime.TxId "11120a47cfccb289df49e0c4f357257139fb90b93a7bd4b66fac8994df95c920"
+              , txIx: 0
+              }
+          , secondPrizeWithdrawalProps: withdrawalProps $ Runtime.TxOutRef
+              { txId: Runtime.TxId "ce4e76d193271ef43e54353331d1cfd26d54594385a6abff3290a63bae4cef5f"
+              , txIx: 0
+              }
+          , thirdPrizeWithdrawalProps: withdrawalProps $ Runtime.TxOutRef
+              { txId: Runtime.TxId "a9352a7a6d0b7ce6b1c1655f8fd22c70c9404414f0b0c682f8457a21efc3596d"
+              , txIx: 0
+              }
+          }
+
+    { status: firstPrizeStatus } <- useWithdrawal firstPrizeWithdrawalProps
+    { status: secondPrizeStatus } <- useWithdrawal secondPrizeWithdrawalProps
+    { status: thirdPrizeStatus } <- useWithdrawal thirdPrizeWithdrawalProps
+
+    let
+      prizeModalProps = { firstPrizeStatus, secondPrizeStatus, thirdPrizeStatus }
+
     appCtx <- useContext appCtxCtx
     backgroundColor <- useColorModeValue "gray.50" "gray.800"
 
@@ -710,8 +610,9 @@ mkRaffleModal = do
                 ]
             , Chakra.modalCloseButton { _focus: { boxShadow: "none" } }
             , Chakra.modalBody { minH: "2xs" }
-                [ Chakra.stack { align: "center", spacing: "6", py: "8" }
-                    [ getModalContent status ]
+                [ Chakra.stack
+                    { align: "center", spacing: "6", py: "8" }
+                    [ getModalContent prizeModalProps ]
                 ]
             , Chakra.modalFooter { textAlign: "center", alignSelf: "center" }
                 [ Chakra.stack {}

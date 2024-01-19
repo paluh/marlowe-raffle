@@ -70,6 +70,6 @@
   },
   "scripts": {
     "bundle": "webpack-cli --mode=production -c webpack.js",
-    "start": "webpack-cli serve --mode=development -c webpack.js"
+    "start": "webpack-cli serve --mode=development --watch -c webpack.js"
   }
 }

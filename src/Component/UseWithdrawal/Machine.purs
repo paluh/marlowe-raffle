@@ -34,6 +34,7 @@ import Data.Maybe (Maybe(..))
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
 import Data.Variant (Variant)
+import Debug (traceM)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
@@ -62,16 +63,22 @@ derive instance Eq PayoutUTxO
 derive newtype instance EncodeJson PayoutUTxO
 derive newtype instance DecodeJson PayoutUTxO
 
+-- We are using "post audit" script
+-- "e165610232235bbbbeff5b998b233daae42979dec92a6722d9cda989"
 payoutReferenceInputForNetwork :: B.Network -> Maybe PayoutReferenceScriptTxOutRef
 payoutReferenceInputForNetwork network
-  | network == B.mainnet = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "074fc62f0eb2571ff816d2d76d3f6824bec0bb9f3c040a61942f3a1a5a92bd7a", txIx: 2 }
-  | network == B.preprod = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "c59678b6892ba0fbeeaaec22d4cbde17026ff614ed47cea02c47752e5853ebc8", txIx: 2 }
-  | network == B.preview = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "07ee392718487daeeb6b972e6813f527530eaf7184a31b001d8072a5ae76915d", txIx: 2 }
+  | network == B.mainnet = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef
+    { txId: TxId "672399f7d551d6e06fda70769f830e4e3783495c6250567c6ae97ecc788ad5a4", txIx: 2 }
+  | network == B.preprod = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef
+    { txId: TxId "9a8a6f387a3330b4141e1cb019380b9ac5c72151c0abc52aa4266245d3c555cd", txIx: 2 }
+  | network == B.preview = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef
+    { txId: TxId "69bfdb7cd911e930bfa073a8c45121e7690939d7680196181731d0dd609ecb73", txIx: 2 }
   -- New
   -- | network == B.mainnet = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "672399f7d551d6e06fda70769f830e4e3783495c6250567c6ae97ecc788ad5a4", txIx: 2 }
   -- | network == B.preprod = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "9a8a6f387a3330b4141e1cb019380b9ac5c72151c0abc52aa4266245d3c555cd", txIx: 2 }
   -- | network == B.preview = Just $ PayoutReferenceScriptTxOutRef $ TxOutRef { txId: TxId "69bfdb7cd911e930bfa073a8c45121e7690939d7680196181731d0dd609ecb73", txIx: 2 }
   | true = Nothing
+
 
 type ExecutionCtxBase r =
   { wallet :: Wallet.Api
@@ -268,7 +275,8 @@ actualDriver (Initializing ctx Nothing) = Just do
 actualDriver (FetchingPayoutUTxO ctx Nothing) = Just do
   fetchPayoutUTxO ctx.cml ctx.txOutRef ctx.blockfrostProjectId ctx.network <#> case _ of
     Nothing -> FetchPayoutUTxOError "UTxO not found or parsing failed"
-    Just payoutUTxO -> FetchPayoutUTxOSuccess payoutUTxO
+    Just payoutUTxO -> do
+      FetchPayoutUTxOSuccess payoutUTxO
 actualDriver (FindingRoleTokenUTxO ctx Nothing) = Just do
   let
     roleTokenInfo = do
@@ -280,21 +288,24 @@ actualDriver (FindingRoleTokenUTxO ctx Nothing) = Just do
     Just utxo -> pure $ FindRoleTokenUTxOSuccess utxo
 actualDriver (GrabbingCollateralUTxOs ctx Nothing) = Just do
   let
-    twoAdaInLovelace :: C.Lovelace
-    twoAdaInLovelace = case C.Lovelace <$> BigInt.fromString "2000000" of
+    fourAndHalfAdaInLovelace :: C.Lovelace
+    fourAndHalfAdaInLovelace = case C.Lovelace <$> BigInt.fromString "4500000" of
       Just l -> l
       Nothing -> unsafeCrashWith "twoAdaInLovelace"
-    -- threeAdaInLovelace :: C.Lovelace
-    -- threeAdaInLovelace = case C.Lovelace <$> BigInt.fromString "3000000" of
-    --   Just l -> l
-    --   Nothing -> unsafeCrashWith "threeAdaInLovelace"
+    threeAdaInLovelace :: C.Lovelace
+    threeAdaInLovelace = case C.Lovelace <$> BigInt.fromString "3000000" of
+      Just l -> l
+      Nothing -> unsafeCrashWith "threeAdaInLovelace"
     -- eightAdaInLovelace :: C.Lovelace
     -- eightAdaInLovelace = case C.Lovelace <$> BigInt.fromString "8000000" of
     --   Just l -> l
     --   Nothing -> unsafeCrashWith "eightAdaInLovelace"
-  C.Wallet.getCollateralUTxOs ctx.cml twoAdaInLovelace ctx.wallet >>= (_ >>= NonEmptyArray.fromArray) >>> case _ of
+  C.Wallet.getCollateralUTxOs ctx.cml threeAdaInLovelace ctx.wallet >>= (_ >>= NonEmptyArray.fromArray) >>> case _ of
     Nothing -> pure $ GrabCollateralUTxOsError "Collateral UTxOs not found"
-    Just utxos -> pure $ GrabCollateralUTxOsSuccess utxos
+    Just utxos -> do
+      traceM "USING COLLATERLS"
+      traceM utxos
+      pure $ GrabCollateralUTxOsSuccess utxos
 actualDriver (PayoutUTxOStatusChecking ctx Nothing) =
   Just $ either PayoutUTxOStatusCheckError (const PayoutUTxOStatusCheckSuccess) <$> runExceptT do
     let
@@ -398,6 +409,9 @@ parsePayoutUTxOs :: CML.Lib -> PayoutTxOutRef -> { datumJson :: Json, utxos :: A
 parsePayoutUTxOs cardanoSerializationlib (PayoutTxOutRef (TxOutRef { txIx, txId })) { datumJson, utxos } = do
   datum <- parseRoleTokenInfo datumJson
   utxo <- note (TypeMismatch "UTxO not found - invalid index") $ find (\(AnUTxO { txOutRef: TxOutRef txOutRef }) -> txOutRef.txIx == txIx) utxos
+  traceM "Fetched payout UTxO with role: "
+  traceM datum
+  traceM "TEST"
   pure $ PayoutUTxO
     { roleToken: datum
     , utxo

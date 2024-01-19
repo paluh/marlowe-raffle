@@ -8,6 +8,7 @@ import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.BigInt.Argonaut (BigInt)
 import Data.BigInt.Argonaut as BigInt
+import Data.DateTime.Instant (instant)
 import Data.Either (Either(..), note)
 import Data.Foldable (class Foldable, fold)
 import Data.Generic.Rep (class Generic)
@@ -242,6 +243,7 @@ nonAdaAssets (Value m) = NonAdaAssets do
 newtype Lovelace = Lovelace BigInt
 derive instance Eq Lovelace
 derive instance Ord Lovelace
+derive instance Newtype Lovelace _
 
 instance Semigroup Lovelace where
   append (Lovelace a) (Lovelace b) = Lovelace (a + b)

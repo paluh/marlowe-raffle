@@ -11,9 +11,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
 import Effect (Effect)
 import Foreign.Internal.Stringify (unsafeStringify)
-import Marlowe.Runtime.Registry (ReferenceScriptUtxo(..))
-import Marlowe.Runtime.Web.Types (TxId(..), TxOutRef(..))
-import Partial.Unsafe (unsafeCrashWith)
+import Marlowe.Runtime.Web.Types (TxId, TxOutRef)
 import React.Basic.Hooks (Hook, UseEffect, useEffect)
 import React.Basic.Hooks as React
 import Unsafe.Coerce (unsafeCoerce)
@@ -22,13 +20,6 @@ import Wallet as Wallet
 type HookApply hooks (newHook :: Type -> Type) = newHook hooks
 
 infixl 0 type HookApply as &
-
-payoutReferenceInputForNetwork :: Blockfrost.Network -> ReferenceScriptUtxo
-payoutReferenceInputForNetwork network
-  | network == Blockfrost.mainnet = ReferenceScriptUtxo $ TxOutRef { txId: TxId "672399f7d551d6e06fda70769f830e4e3783495c6250567c6ae97ecc788ad5a4", txIx: 2 }
-  | network == Blockfrost.preprod = ReferenceScriptUtxo $ TxOutRef { txId: TxId "9a8a6f387a3330b4141e1cb019380b9ac5c72151c0abc52aa4266245d3c555cd", txIx: 2 }
-  | network == Blockfrost.preview = ReferenceScriptUtxo $ TxOutRef { txId: TxId "69bfdb7cd911e930bfa073a8c45121e7690939d7680196181731d0dd609ecb73", txIx: 2 }
-  | true = unsafeCrashWith "Blockfrost.payoutReferenceInput: Unknown network"
 
 type Props =
   { wallet :: Wallet.Api

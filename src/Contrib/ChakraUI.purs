@@ -90,6 +90,7 @@ stack props children = do
 
 type HeadingPropsBaseRow r =
   ( "as" :: Opt String
+  , alignSelf :: Opt String
   , fontSize :: Opt String
   , size :: Opt String
   , textAlign :: Opt String
@@ -374,10 +375,12 @@ hStack props children = do
 
 type LinkPropsBaseRow r =
   ( href :: String
+  , alignSelf :: Opt String
   , boxShadow :: Opt String
   , border :: Opt String
   , _focus :: Opt { boxShadow :: Opt String, border :: Opt String }
   , _hover :: Opt { bgColor :: Opt String }
+  , justifyContent :: Opt String
   , ml :: Opt String
   , target :: Opt String
   | r
@@ -460,8 +463,10 @@ select props children = do
 
 type ButtonPropsBaseRow r =
   ( w :: Opt String
+  , alignSelf :: Opt String
   , bgColor :: Opt String
   , borderRadius :: Opt String
+  , justifySelf :: Opt String
   , onClick :: Opt EventHandler
   , _hover :: Opt { bgColor :: Opt String }
   | r

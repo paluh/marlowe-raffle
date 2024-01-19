@@ -91,7 +91,7 @@ import Unsafe.Coerce (unsafeCoerce)
 --   reference_inputs:
 --     - transaction_id: 001c4e145938d2d7afe1f3a17360dc4cf9efffab4fe9e76f3ac6351c9e937537
 --       index: '2'
---   script_data_hash: null # let's test null - that was original value: 5e0fe2245fae63ab56cdac27ecc34d021a06032a51fc182585f5da976f9a1e2d
+--   script_data_hash: 5e0fe2245fae63ab56cdac27ecc34d021a06032a51fc182585f5da976f9a1e2d
 --   ttl: null
 --   certs: null
 --   withdrawals: null
@@ -201,15 +201,20 @@ buildTxJson cml address roleTokenInfo { collaterals, roleToken, payout } referen
     --       ex_units:
     --         mem: '2237238'
     --         steps: '609068390'
-    exUnits = { mem: "3237238", steps: "809068390" }
-    feeInt = 500000 -- 3593849
+    exUnits = { mem: "14000000", steps: "4109068390" }
+    -- cpu: -37247  | mem: 324658
+    -- cpu: -721608 | mem: 93550
+    -- cpu: 77497392 | mem: -1150
+
+    feeInt = 1564177
     fee = C.lovelaceFromInt feeInt
 
     -- * Total collateral is fee dependent and has to fullfil ledger rule (current collateralPercent is 150):
     --    totalColateral * 100 >= txfee txb * (collateralPercent pp)
     -- So in the current setup we have to really provide collateral which is 1.5 times bigger than the fee.
-    totalCollateral = feeInt * 150 / 100
+    totalCollateral = feeInt * 250 / 100
     totalCollateralValue = C.lovelaceToValue $ C.lovelaceFromInt totalCollateral
+
 
     -- {
     --   "jsonrpc": "2.0",
@@ -218,7 +223,7 @@ buildTxJson cml address roleTokenInfo { collaterals, roleToken, payout } referen
     --       "validator": "spend:1",
     --       "budget": {
     --         "memory": 5236222,
-    --         "cpu": 1212353
+    --        "cpu": 1212353
     --       }
     --     },
     --     {
@@ -443,4 +448,5 @@ lookupOptDecode n obj = do
 
 encodeInsert :: forall a. EncodeJson a => String -> a -> Object Json -> Object Json
 encodeInsert k v obj = Object.insert k (encodeJson v) obj
+
 
